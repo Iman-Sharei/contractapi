@@ -2,8 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from dataapi.application.data_api_builder import create_data_app
-from dataapi.domain.models.spec import parse_spec
+from contractapi.application.data_api_builder import create_data_app
+from contractapi.domain.models.spec import parse_spec
 
 
 pyarrow = pytest.importorskip("pyarrow")
@@ -11,7 +11,7 @@ pyarrow = pytest.importorskip("pyarrow")
 
 def _pg_or_skip():
     try:
-        from dataapi.infrastructure.db.engine import create_pg_engine
+        from contractapi.infrastructure.db.engine import create_pg_engine
 
         engine = create_pg_engine(
             "postgresql://postgres:postgres@localhost:5433/app", pooled=False

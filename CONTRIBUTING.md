@@ -1,4 +1,4 @@
-# Contributing to dataapi
+# Contributing to contractapi
 
 Thanks for helping. Keep changes small, tested, and aligned with **spec-first**
 (opt-in endpoints, never mirror the whole schema by default).
@@ -35,9 +35,9 @@ npm install && npm run dev
 ## CLI smoke
 
 ```bash
-dataapi doctor --url postgresql://postgres:postgres@localhost:5433/app
-dataapi validate backend/examples/dataapi.yaml
-dataapi diff backend/examples/dataapi.yaml backend/examples/jwt_write.yaml
+contractapi doctor --url postgresql://postgres:postgres@localhost:5433/app
+contractapi validate backend/examples/contractapi.yaml
+contractapi diff backend/examples/contractapi.yaml backend/examples/jwt_write.yaml
 ```
 
 ## PR checklist

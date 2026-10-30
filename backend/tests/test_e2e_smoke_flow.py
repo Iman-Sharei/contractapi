@@ -6,9 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from dataapi.application.studio_service import spec_store
-from dataapi.infrastructure.runtime_store import clear_active
-from dataapi.interfaces.http.app_factory import create_studio_app
+from contractapi.application.studio_service import spec_store
+from contractapi.infrastructure.runtime_store import clear_active
+from contractapi.interfaces.http.app_factory import create_studio_app
 
 
 STUDIO = {"X-API-Key": "dev-studio-key-change-me"}
@@ -17,7 +17,7 @@ DB = "postgresql://postgres:postgres@localhost:5433/app"
 
 def _pg_or_skip():
     try:
-        from dataapi.infrastructure.db.engine import create_pg_engine
+        from contractapi.infrastructure.db.engine import create_pg_engine
 
         engine = create_pg_engine(DB, pooled=False)
         with engine.connect() as conn:
@@ -30,8 +30,8 @@ def _pg_or_skip():
 def _clean_store(tmp_path, monkeypatch):
     monkeypatch.setenv("SPECS_DIR", str(tmp_path / "specs"))
     monkeypatch.setenv("RESTORE_ACTIVE_ON_BOOT", "false")
-    monkeypatch.setenv("DATAAPI_EXPERIMENTAL", "all")
-    from dataapi.core.config import get_settings
+    monkeypatch.setenv("CONTRACTAPI_EXPERIMENTAL", "all")
+    from contractapi.core.config import get_settings
 
     get_settings.cache_clear()
     spec_store.clear()

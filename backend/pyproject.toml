@@ -3,14 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "dataapi-pg"
+name = "contractapi"
 version = "0.5.0b1"
-description = "Spec-first Postgres → FastAPI builder: opt-in endpoints, field allowlists, safe queries, OpenAPI."
+description = "Spec-first Postgres → FastAPI: design the contract, then generate a secure API."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Iman Sharei" }]
-keywords = ["fastapi", "postgresql", "openapi", "api", "data-engineering"]
+keywords = ["fastapi", "postgresql", "openapi", "api", "data-engineering", "contract-first"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Framework :: FastAPI",
@@ -36,10 +36,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/imansharei/dataapi"
-Documentation = "https://github.com/imansharei/dataapi#readme"
-Issues = "https://github.com/imansharei/dataapi/issues"
-Changelog = "https://github.com/imansharei/dataapi/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Iman-Sharei/contractapi"
+Documentation = "https://github.com/Iman-Sharei/contractapi#readme"
+Issues = "https://github.com/Iman-Sharei/contractapi/issues"
+Changelog = "https://github.com/Iman-Sharei/contractapi/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 redis = ["redis>=5.0.0"]
@@ -48,7 +48,7 @@ duckdb = ["duckdb>=1.1.0", "duckdb-engine>=0.13.0"]
 graphql = ["strawberry-graphql[fastapi]>=0.243.0"]
 oidc = ["cryptography>=43.0.0"]
 all = [
-  "dataapi-pg[redis,parquet,duckdb,graphql,oidc]",
+  "contractapi[redis,parquet,duckdb,graphql,oidc]",
 ]
 dev = [
   "pytest>=8.3.0",
@@ -61,16 +61,16 @@ dev = [
 ]
 
 [project.scripts]
-dataapi = "dataapi.cli:app"
+contractapi = "contractapi.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dataapi"]
+packages = ["src/contractapi"]
 
 [tool.hatch.build.targets.wheel.sources]
-"src/dataapi" = "dataapi"
+"src/contractapi" = "contractapi"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/dataapi", "README.md", "examples", "LICENSE", "tests"]
+include = ["src/contractapi", "README.md", "examples", "LICENSE", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from dataapi.domain.models.spec import ApiSpec, EndpointSpec, load_spec
+from contractapi.domain.models.spec import ApiSpec, EndpointSpec, load_spec
 
 
 def test_rejects_sensitive_fields_by_default():

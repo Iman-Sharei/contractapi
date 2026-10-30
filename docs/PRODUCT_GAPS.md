@@ -30,4 +30,4 @@ Default: `all`.
 - Managed cloud hosting
 - Real-time collaboration
 
-PyPI package name: **`dataapi-pg`** (import still `dataapi`).
+PyPI package name: **`contractapi`** (import `contractapi`).

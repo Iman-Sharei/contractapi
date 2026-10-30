@@ -5,13 +5,13 @@ All notable changes to this project are documented here.
 ## 0.5.0b1 — 2026-10-30 (Beta)
 
 ### Packaging
-- PyPI name **`dataapi-pg`** (PyPI `dataapi` was taken); import remains `dataapi`
+- PyPI name **`contractapi`** (legacy name `dataapi` was taken on PyPI); import remains `contractapi`
 - Classifier **Beta**; docs: STABILITY, SECURITY, COMPATIBILITY, PRODUCTION, UPGRADING, RELEASE
 
 ### Reliability
 - Persist active APIs under `SPECS_DIR/.runtime/active.json` (+ `DATAAPI_BOOT_SPEC`)
 - Webhook retries with backoff + JSONL DLQ
-- Durable `insert` job payloads for Redis workers (`dataapi worker`)
+- Durable `insert` job payloads for Redis workers (`contractapi worker`)
 - `DATAAPI_EXPERIMENTAL` feature gate
 
 ### Ops
@@ -25,7 +25,7 @@ All notable changes to this project are documented here.
 - **Parquet** list export (`parquet_export`, `?format=parquet`) via optional `pyarrow`
 - **Studio OIDC** (JWKS) alongside `X-API-Key` break-glass — Keycloak/Authentik/Okta-ready
 - **Multi-active specs**: primary `/data` + named mounts `/apis/{name}`; `GET /studio/active/list`
-- **Horizontal job queue**: Redis list + `dataapi worker` when `JOB_QUEUE_ENABLED=true`
+- **Horizontal job queue**: Redis list + `contractapi worker` when `JOB_QUEUE_ENABLED=true`
 - **DuckDB** warehouse driver (`database.driver: duckdb`) for local/analytics SQL
 - **GraphQL facade** at `/graphql` when `strawberry` is installed (contract-scoped reads)
 

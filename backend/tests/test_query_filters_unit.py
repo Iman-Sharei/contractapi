@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table
 
-from dataapi.application.query_filters import parse_filters
-from dataapi.core.errors import AppError
-from dataapi.domain.models.spec import EndpointSpec
+from contractapi.application.query_filters import parse_filters
+from contractapi.core.errors import AppError
+from contractapi.domain.models.spec import EndpointSpec
 
 
 def _table():

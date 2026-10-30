@@ -3,7 +3,7 @@ import { StudioNav } from "@/components/studio/StudioNav";
 import styles from "@/components/studio/flow.module.css";
 
 export const metadata: Metadata = {
-  title: "Studio · dataapi",
+  title: "Studio · contractapi",
   description: "Design, activate, and operate Postgres → FastAPI contracts.",
 };
 

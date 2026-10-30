@@ -1,5 +1,5 @@
 # DuckDB warehouse MVP — local analytics file / memory.
-# Requires: pip install 'dataapi[duckdb]'
+# Requires: pip install 'contractapi[duckdb]'
 # Point url at a .duckdb file or :memory: with views over Parquet.
 database:
   url: duckdb:///:memory:

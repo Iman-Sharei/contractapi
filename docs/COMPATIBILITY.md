@@ -12,11 +12,11 @@
 
 | Extra | Package |
 |-------|---------|
-| `pip install 'dataapi-pg[redis]'` | shared KV / queue |
-| `pip install 'dataapi-pg[parquet]'` | Parquet export |
-| `pip install 'dataapi-pg[duckdb]'` | DuckDB driver |
-| `pip install 'dataapi-pg[graphql]'` | `/graphql` |
-| `pip install 'dataapi-pg[oidc]'` | cryptography for OIDC |
-| `pip install 'dataapi-pg[all]'` | everything |
+| `pip install 'contractapi[redis]'` | shared KV / queue |
+| `pip install 'contractapi[parquet]'` | Parquet export |
+| `pip install 'contractapi[duckdb]'` | DuckDB driver |
+| `pip install 'contractapi[graphql]'` | `/graphql` |
+| `pip install 'contractapi[oidc]'` | cryptography for OIDC |
+| `pip install 'contractapi[all]'` | everything |
 
-Import name remains **`dataapi`**; PyPI distribution name is **`dataapi-pg`** (`dataapi` was already taken on PyPI).
+Import name remains **`contractapi`**; PyPI distribution name is **`contractapi`** (`contractapi` was already taken on PyPI).

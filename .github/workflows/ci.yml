@@ -57,9 +57,9 @@ jobs:
           JWT_SECRET: ci-test-secret-not-for-prod
           STUDIO_API_KEY: ci-studio-key
           DATA_API_KEYS: ci-data-key
-          AUDIT_LOG_PATH: /tmp/dataapi-audit.jsonl
-          SPECS_DIR: /tmp/dataapi-specs
-          DATAAPI_EXPERIMENTAL: all
+          AUDIT_LOG_PATH: /tmp/contractapi-audit.jsonl
+          SPECS_DIR: /tmp/contractapi-specs
+          CONTRACTAPI_EXPERIMENTAL: all
           RESTORE_ACTIVE_ON_BOOT: "false"
         run: pytest -q --tb=short
       - name: Build sdist/wheel

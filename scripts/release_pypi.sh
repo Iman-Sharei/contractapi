@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build + check the dataapi-pg distribution.
+# Build + check the contractapi distribution.
 # Publishing requires YOUR PyPI login / token — this script will not upload unless you pass --upload.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

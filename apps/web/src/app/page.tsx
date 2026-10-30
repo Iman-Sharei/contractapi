@@ -7,7 +7,7 @@ export default function HomePage() {
   return (
     <main className={styles.page}>
       <header className={styles.nav}>
-        <div className={styles.brand}>dataapi</div>
+        <div className={styles.brand}>contractapi</div>
         <Link className={styles.navLink} href="/studio">
           Open Studio
         </Link>
@@ -15,7 +15,7 @@ export default function HomePage() {
 
       <section className={styles.hero}>
         <p className={styles.kicker}>Postgres → designed FastAPI</p>
-        <h1 className={styles.title}>dataapi</h1>
+        <h1 className={styles.title}>contractapi</h1>
         <p className={styles.lede}>
           Spec-first APIs for data teams. Opt-in tables, explicit field allowlists, safe filters,
           read-only by default — not another schema mirror.

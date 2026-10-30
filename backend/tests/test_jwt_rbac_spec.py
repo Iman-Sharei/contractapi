@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from dataapi.core.config import get_settings
-from dataapi.domain.models.spec import ApiSpec, JwtConfig, PaginationMode
-from dataapi.infrastructure.security.jwt_tokens import issue_token, verify_token
+from contractapi.core.config import get_settings
+from contractapi.domain.models.spec import ApiSpec, JwtConfig, PaginationMode
+from contractapi.infrastructure.security.jwt_tokens import issue_token, verify_token
 
 
 def test_cursor_mode_auto_adds_pk_sortable():

@@ -26,9 +26,9 @@ Forward `X-Forwarded-For` / `X-Forwarded-Proto` so IP allowlists work.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install 'dataapi-pg[redis]'
+pip install 'contractapi[redis]'
 export STUDIO_API_KEY=... DATA_API_KEYS=... JWT_SECRET=... REDIS_URL=redis://127.0.0.1:6379/0
-dataapi serve --host 0.0.0.0 --port 8000
+contractapi serve --host 0.0.0.0 --port 8000
 ```
 
 Activate a YAML via Studio HTTP or bake a startup spec (see `DATAAPI_BOOT_SPEC`).
@@ -38,7 +38,7 @@ Activate a YAML via Studio HTTP or bake a startup spec (see `DATAAPI_BOOT_SPEC`)
 | Concern | Guidance |
 |---------|----------|
 | Active spec | Persisted under `SPECS_DIR/.runtime/`; each replica should share the volume **or** activate via API against each instance |
-| Jobs | Set `JOB_QUEUE_ENABLED=true` + run `dataapi worker` on ≥1 worker; API nodes enqueue only |
+| Jobs | Set `JOB_QUEUE_ENABLED=true` + run `contractapi worker` on ≥1 worker; API nodes enqueue only |
 | Cache / idempotency / JWT revoke | Requires Redis |
 | Sticky sessions | Not required for data-plane if Redis is shared |
 

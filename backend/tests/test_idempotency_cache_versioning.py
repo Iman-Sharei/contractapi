@@ -1,10 +1,10 @@
 from fastapi.testclient import TestClient
 
-from dataapi.application.data_api_builder import create_data_app
-from dataapi.core.config import get_settings
-from dataapi.domain.models.spec import parse_spec
-from dataapi.infrastructure.cache_store import response_cache
-from dataapi.infrastructure.idempotency import idempotency_store
+from contractapi.application.data_api_builder import create_data_app
+from contractapi.core.config import get_settings
+from contractapi.domain.models.spec import parse_spec
+from contractapi.infrastructure.cache_store import response_cache
+from contractapi.infrastructure.idempotency import idempotency_store
 
 
 def _write_spec(db_url: str = "postgresql://postgres:postgres@localhost:5433/app"):
@@ -37,7 +37,7 @@ def test_api_prefix_versioning_and_metrics():
     # Use sqlite-less path: only check routing shape without DB for /health/metrics
     # Health does not need DB; metrics always available.
     # For versioned routes we need DB — skip body if unavailable via try.
-    from dataapi.infrastructure.db.engine import create_pg_engine
+    from contractapi.infrastructure.db.engine import create_pg_engine
     from sqlalchemy import text
 
     try:
@@ -61,11 +61,11 @@ def test_api_prefix_versioning_and_metrics():
     assert listed.status_code == 200
     assert client.get("/customers").status_code == 404
     metrics_body = client.get("/metrics").text
-    assert "dataapi_http_requests_total" in metrics_body
+    assert "contractapi_http_requests_total" in metrics_body
 
 
 def test_idempotency_replay_and_conflict():
-    from dataapi.infrastructure.db.engine import create_pg_engine
+    from contractapi.infrastructure.db.engine import create_pg_engine
     from sqlalchemy import text
     import uuid
 
@@ -106,9 +106,9 @@ def test_idempotency_replay_and_conflict():
 
 
 def test_cache_hit_on_second_get():
-    from dataapi.infrastructure.db.engine import create_pg_engine
+    from contractapi.infrastructure.db.engine import create_pg_engine
     from sqlalchemy import text
-    from dataapi.infrastructure.observability import metrics
+    from contractapi.infrastructure.observability import metrics
 
     try:
         engine = create_pg_engine(
@@ -128,4 +128,4 @@ def test_cache_hit_on_second_get():
     assert client.get("/v1/customers").status_code == 200
     assert client.get("/v1/customers").status_code == 200
     rendered = metrics.render_prometheus()
-    assert "dataapi_cache_hits_total" in rendered
+    assert "contractapi_cache_hits_total" in rendered

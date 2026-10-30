@@ -13,7 +13,7 @@ Please **do not** open a public GitHub issue for security bugs.
 
 Email the maintainer listed on the GitHub profile / PyPI project page with:
 
-- Affected version (`dataapi version`)
+- Affected version (`contractapi version`)
 - Description + impact
 - Minimal reproduction (no real secrets)
 

@@ -20,7 +20,7 @@ export function StudioNav() {
         Skip to content
       </a>
       <Link href="/" className={styles.brand}>
-        dataapi
+        contractapi
       </Link>
       <nav className={styles.navLinks} aria-label="Studio">
         {links.map((l) => {

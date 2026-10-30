@@ -1,9 +1,9 @@
-from dataapi.infrastructure.persistence import spec_repo
+from contractapi.infrastructure.persistence import spec_repo
 
 
 def test_save_list_load_delete(tmp_path, monkeypatch):
     monkeypatch.setenv("SPECS_DIR", str(tmp_path))
-    from dataapi.core.config import get_settings
+    from contractapi.core.config import get_settings
 
     get_settings.cache_clear()
 

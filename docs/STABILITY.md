@@ -18,7 +18,7 @@ Marked in OpenAPI / logs / docs as experimental:
 - GraphQL facade (`/graphql`)
 - DuckDB driver
 - OIDC Studio login
-- Redis horizontal job queue + `dataapi worker`
+- Redis horizontal job queue + `contractapi worker`
 - Parquet export
 - Multi-active `/apis/{name}` beyond single primary `/data`
 

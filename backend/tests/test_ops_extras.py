@@ -1,11 +1,11 @@
-from dataapi.application.postman_export import build_postman_collection
-from dataapi.domain.models.spec import parse_spec
-from dataapi.infrastructure.api_keys import create_key, key_is_valid, revoke_key
+from contractapi.application.postman_export import build_postman_collection
+from contractapi.domain.models.spec import parse_spec
+from contractapi.infrastructure.api_keys import create_key, key_is_valid, revoke_key
 
 
 def test_api_key_lifecycle(tmp_path, monkeypatch):
     monkeypatch.setenv("SPECS_DIR", str(tmp_path / "specs"))
-    from dataapi.core.config import get_settings
+    from contractapi.core.config import get_settings
 
     get_settings.cache_clear()
     created = create_key(name="t", scopes=["read"])

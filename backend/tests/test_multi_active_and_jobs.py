@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
-from dataapi.application.jobs import create_job, get_job, run_job
-from dataapi.application.studio_service import activate_spec, spec_store
-from dataapi.interfaces.http.app_factory import create_studio_app
+from contractapi.application.jobs import create_job, get_job, run_job
+from contractapi.application.studio_service import activate_spec, spec_store
+from contractapi.interfaces.http.app_factory import create_studio_app
 
 
 def setup_function() -> None:
@@ -39,7 +39,7 @@ def test_multi_active_list_and_mounts():
     import pytest
     from sqlalchemy import text
 
-    from dataapi.infrastructure.db.engine import create_pg_engine
+    from contractapi.infrastructure.db.engine import create_pg_engine
 
     try:
         engine = create_pg_engine(

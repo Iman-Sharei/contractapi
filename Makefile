@@ -21,17 +21,17 @@ api:
 	  STUDIO_API_KEY=dev-studio-key-change-me \
 	  DATA_API_KEYS=dev-data-key \
 	  CORS_ORIGINS=http://localhost:3000 \
-	  dataapi serve --host 127.0.0.1 --port 8000
+	  contractapi serve --host 127.0.0.1 --port 8000
 
 studio:
 	cd apps/web && npm run dev
 
 doctor:
-	. .venv/bin/activate && dataapi doctor --url postgresql://postgres:postgres@localhost:5433/app
+	. .venv/bin/activate && contractapi doctor --url postgresql://postgres:postgres@localhost:5433/app
 
 examples:
 	. .venv/bin/activate && \
-	  dataapi validate backend/examples/dataapi.yaml && \
-	  dataapi validate backend/examples/jwt_write.yaml --no-check-db && \
-	  dataapi validate backend/examples/sql_metrics.yaml --no-check-db && \
-	  dataapi validate backend/examples/webhooks.yaml --no-check-db
+	  contractapi validate backend/examples/contractapi.yaml && \
+	  contractapi validate backend/examples/jwt_write.yaml --no-check-db && \
+	  contractapi validate backend/examples/sql_metrics.yaml --no-check-db && \
+	  contractapi validate backend/examples/webhooks.yaml --no-check-db

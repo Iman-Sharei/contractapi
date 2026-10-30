@@ -1,5 +1,5 @@
-from dataapi.application.cursor_paging import decode_cursor, encode_cursor
-from dataapi.application.openapi_diff import diff_openapi
+from contractapi.application.cursor_paging import decode_cursor, encode_cursor
+from contractapi.application.openapi_diff import diff_openapi
 
 
 def test_cursor_roundtrip():

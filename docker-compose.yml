@@ -38,7 +38,7 @@ services:
       JOB_QUEUE_ENABLED: ${JOB_QUEUE_ENABLED:-false}
       SPECS_DIR: /data/specs
       AUDIT_LOG_PATH: /data/logs/audit.jsonl
-      DATAAPI_EXPERIMENTAL: ${DATAAPI_EXPERIMENTAL:-all}
+      CONTRACTAPI_EXPERIMENTAL: ${CONTRACTAPI_EXPERIMENTAL:-all}
     ports:
       - "8000:8000"
     volumes:
@@ -56,14 +56,14 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       JOB_QUEUE_ENABLED: "true"
-      DATAAPI_EXPERIMENTAL: all
+      CONTRACTAPI_EXPERIMENTAL: all
       SPECS_DIR: /data/specs
     volumes:
       - apidata:/data
     depends_on:
       redis:
         condition: service_healthy
-    command: ["dataapi", "worker"]
+    command: ["contractapi", "worker"]
 
   web:
     build:

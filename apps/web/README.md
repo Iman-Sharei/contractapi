@@ -1,4 +1,4 @@
-# dataapi Studio (`apps/web`)
+# contractapi Studio (`apps/web`)
 
 Next.js UI for designing Postgres → FastAPI contracts.
 

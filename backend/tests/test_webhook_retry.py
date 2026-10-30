@@ -1,10 +1,10 @@
-from dataapi.domain.models.spec import WebhookConfig
-from dataapi.infrastructure import webhooks as wh
+from contractapi.domain.models.spec import WebhookConfig
+from contractapi.infrastructure import webhooks as wh
 
 
 def test_webhook_exhausted_goes_to_dlq(tmp_path, monkeypatch):
     monkeypatch.setenv("SPECS_DIR", str(tmp_path))
-    from dataapi.core.config import get_settings
+    from contractapi.core.config import get_settings
 
     get_settings.cache_clear()
 

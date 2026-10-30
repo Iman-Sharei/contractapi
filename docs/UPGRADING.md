@@ -2,7 +2,7 @@
 
 ## 0.4.x → 0.5.0b1
 
-1. **PyPI name:** install `dataapi-pg` (not `dataapi`). Import stays `import dataapi`.
+1. **PyPI name:** install `contractapi` (not `contractapi`). Import is `import contractapi`.
 2. **Studio env:** move secrets to server-only `STUDIO_API_KEY` / `DATA_API_KEY` (see `apps/web/.env.example`).
 3. **Activate persistence:** active APIs are restored from `SPECS_DIR/.runtime/active.json` on boot.
 4. **Webhooks:** failed deliveries retry with backoff; exhausted events land in `SPECS_DIR/.runtime/webhook-dlq.jsonl`.

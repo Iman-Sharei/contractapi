@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from dataapi.core.config import get_settings
-from dataapi.interfaces.http.app_factory import create_studio_app
+from contractapi.core.config import get_settings
+from contractapi.interfaces.http.app_factory import create_studio_app
 
 
 def test_studio_requires_api_key():

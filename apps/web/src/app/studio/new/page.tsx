@@ -77,7 +77,7 @@ export default function NewApiWizardPage() {
       app: {
         title,
         version: "0.1.0",
-        description: "Created with dataapi Studio wizard",
+        description: "Created with contractapi Studio wizard",
         read_only: readOnly,
         auth,
         api_prefix: apiPrefix,

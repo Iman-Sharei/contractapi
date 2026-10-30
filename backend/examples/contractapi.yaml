@@ -1,0 +1,61 @@
+database:
+  url: postgresql://postgres:postgres@localhost:5433/app
+
+app:
+  title: My Data API
+  version: 0.3.0
+  description: Spec-first API with cursor pagination, relations, JWT/RBAC, ETag, filters.
+  read_only: true
+  auth: api_key
+  api_prefix: /v1
+  legacy_api_prefix: null
+  compression: true
+  audit_enabled: true
+  tracing: true
+  cache:
+    enabled: true
+    ttl_seconds: 30
+  idempotency:
+    enabled: true
+    required_for_writes: false
+  rate_limit:
+    enabled: true
+    requests_per_minute: 120
+  rbac:
+    - role: analyst
+      endpoints:
+        customers: [id, name, email, created_at]
+    - role: viewer
+      endpoints:
+        customers: [id, name]
+
+endpoints:
+  - name: customers
+    path: /customers
+    table: customers
+    schema: public
+    methods: [GET]
+    primary_key: id
+    fields: [id, name, email, created_at, updated_at]
+    filters: [email, name]
+    filter_operators: [eq, ne, contains, startswith, in, gt, gte, lt, lte]
+    sortable: [id, created_at, name]
+    etag_field: updated_at
+    soft_delete:
+      column: deleted_at
+    pagination:
+      enabled: true
+      mode: cursor
+      default_limit: 20
+      max_limit: 100
+    relations:
+      - name: orders
+        table: orders
+        schema: public
+        type: one_to_many
+        local_key: id
+        foreign_key: customer_id
+        primary_key: id
+        fields: [id, customer_id, total, status, created_at]
+        max_per_parent: 50
+    description: Customers with batched orders (anti N+1)

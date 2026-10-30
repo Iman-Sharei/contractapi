@@ -6,12 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from dataapi.application.data_api_builder import create_data_app
-from dataapi.core.config import get_settings
-from dataapi.domain.models.spec import parse_spec
-from dataapi.infrastructure.db.engine import create_pg_engine
-from dataapi.infrastructure.security.jwt_tokens import issue_token
-from dataapi.interfaces.http.app_factory import create_studio_app
+from contractapi.application.data_api_builder import create_data_app
+from contractapi.core.config import get_settings
+from contractapi.domain.models.spec import parse_spec
+from contractapi.infrastructure.db.engine import create_pg_engine
+from contractapi.infrastructure.security.jwt_tokens import issue_token
+from contractapi.interfaces.http.app_factory import create_studio_app
 
 DB_URL = "postgresql://postgres:postgres@localhost:5433/app"
 
@@ -163,5 +163,5 @@ def test_studio_activate_mount(monkeypatch):
     assert data.status_code == 200, data.text
     assert "items" in data.json()
     assert studio.get("/data/ready").status_code == 200
-    assert "dataapi_http_requests_total" in studio.get("/data/metrics").text
+    assert "contractapi_http_requests_total" in studio.get("/data/metrics").text
     get_settings.cache_clear()

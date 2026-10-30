@@ -1,4 +1,4 @@
-# dataapi
+# contractapi
 
 [![CI](https://img.shields.io/badge/CI-pytest-0B6E4F)](.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -7,7 +7,7 @@
 **Spec-first Postgres → FastAPI**, with a Next.js Studio.
 
 **Maturity: Beta (`0.5.0b1`)** — see [docs/STABILITY.md](docs/STABILITY.md).  
-PyPI: `pip install dataapi-pg` (import name still `dataapi`).
+PyPI: `pip install contractapi` (import name `contractapi`).
 
 You design the API contract. The database is only the source — never the public surface.
 
@@ -18,7 +18,7 @@ PostgreSQL / DuckDB ──introspect──► Studio / YAML ──activate──
 
 ## Why not just PostgREST / Hasura?
 
-| Tool | Typical gap | dataapi |
+| Tool | Typical gap | contractapi |
 |---|---|---|
 | PostgREST / Hasura / Directus | API ≈ full schema | Opt-in endpoints + custom paths |
 | sandman2 / db2api | Auto-expose tables | Field allowlists; read-only default |
@@ -41,7 +41,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e "./backend[dev]"
 export STUDIO_API_KEY=dev-studio-key-change-me DATA_API_KEYS=dev-data-key
 export JWT_SECRET=dev-jwt-secret-change-me-please-32chars CORS_ORIGINS=http://localhost:3000
-dataapi serve --host 127.0.0.1 --port 8000
+contractapi serve --host 127.0.0.1 --port 8000
 # other terminal:
 cd apps/web && cp .env.example .env.local && npm install && npm run dev
 ```
@@ -80,21 +80,21 @@ PY
 ## CLI
 
 ```bash
-dataapi version
-dataapi doctor --url postgresql://postgres:postgres@localhost:5433/app
-dataapi init my.yaml --template readonly   # readonly|jwt|sql|webhooks
-dataapi introspect -u postgresql://postgres:postgres@localhost:5433/app
-dataapi validate backend/examples/dataapi.yaml
-dataapi diff backend/examples/dataapi.yaml backend/examples/jwt_write.yaml --fail-on-breaking
-dataapi serve                              # studio + /data
-dataapi serve backend/examples/sql_metrics.yaml --data-only
+contractapi version
+contractapi doctor --url postgresql://postgres:postgres@localhost:5433/app
+contractapi init my.yaml --template readonly   # readonly|jwt|sql|webhooks
+contractapi introspect -u postgresql://postgres:postgres@localhost:5433/app
+contractapi validate backend/examples/contractapi.yaml
+contractapi diff backend/examples/contractapi.yaml backend/examples/jwt_write.yaml --fail-on-breaking
+contractapi serve                              # studio + /data
+contractapi serve backend/examples/sql_metrics.yaml --data-only
 ```
 
 ## Examples
 
 | File | Shows |
 |---|---|
-| [backend/examples/dataapi.yaml](backend/examples/dataapi.yaml) | Read-only, relations, cursor, soft-delete, ETag |
+| [backend/examples/contractapi.yaml](backend/examples/contractapi.yaml) | Read-only, relations, cursor, soft-delete, ETag |
 | [backend/examples/jwt_write.yaml](backend/examples/jwt_write.yaml) | JWT roles, writes, validations, bulk |
 | [backend/examples/sql_metrics.yaml](backend/examples/sql_metrics.yaml) | SQL metrics + CSV/NDJSON/Parquet |
 | [backend/examples/webhooks.yaml](backend/examples/webhooks.yaml) | Write webhooks with HMAC |
@@ -106,7 +106,7 @@ dataapi serve backend/examples/sql_metrics.yaml --data-only
 - Opt-in tables/views/SQL · sensitive column block · read-only default  
 - API key / JWT (+ refresh/revoke) · Studio OIDC (optional) · row-level · soft-delete · ETag  
 - Filters / `?q=` / sparse fields · cursor|offset · CSV/NDJSON/Parquet · Link headers  
-- Idempotency · cache · bulk · async 202 (in-process or Redis queue + `dataapi worker`)  
+- Idempotency · cache · bulk · async 202 (in-process or Redis queue + `contractapi worker`)  
 - Multi-active mounts `/data` + `/apis/{name}` · optional `/graphql` · audit JSONL  
 - Prometheus `/metrics` · `X-Trace-Id` · optional Redis KV · Helm skeleton  
 
@@ -121,12 +121,12 @@ More: [docs/PRODUCT_GAPS.md](docs/PRODUCT_GAPS.md) · [docs/UPGRADING.md](docs/U
 ## Layout
 
 ```
-dataapi/
+contractapi/
 ├── apps/web/                 # Next.js Studio
 ├── backend/                  # Python package + CLI
 │   ├── examples/             # YAML templates
-│   └── src/dataapi/
-├── deploy/helm/dataapi/      # Kubernetes chart
+│   └── src/contractapi/
+├── deploy/helm/contractapi/      # Kubernetes chart
 ├── docker-compose.yml        # Demo Postgres :5433
 └── docs/
 ```

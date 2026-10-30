@@ -21,7 +21,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "dataapi — Spec-first Postgres APIs",
+  title: "contractapi — Spec-first Postgres APIs",
   description:
     "Design secure, documented FastAPI endpoints over PostgreSQL without mirroring your entire schema.",
 };
