@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
@@ -29,7 +29,7 @@ def issue_token_pair(
 ) -> dict[str, Any]:
     settings = get_settings()
     _require_secret(settings.jwt_secret)
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     access_jti = new_jti()
     refresh_jti = new_jti()
     access_ttl = timedelta(minutes=jwt_cfg.access_ttl_minutes)
@@ -140,7 +140,7 @@ def revoke_token(token: str, jwt_cfg: JwtConfig) -> None:
     exp = claims.get("exp")
     ttl = 3600
     if isinstance(exp, (int, float)):
-        ttl = max(int(exp - datetime.now(UTC).timestamp()), 60)
+        ttl = max(int(exp - datetime.now(timezone.utc).timestamp()), 60)
     if typ == "refresh":
         revoke_refresh(jti)
     elif jti:

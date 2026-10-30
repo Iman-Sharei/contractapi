@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -1316,7 +1316,7 @@ def _add_delete(router, engine, table, endpoint, spec, tags) -> None:  # type: i
                     stmt = (
                         table.update()
                         .where(where)
-                        .values({endpoint.soft_delete.column: datetime.now(UTC)})
+                        .values({endpoint.soft_delete.column: datetime.now(timezone.utc)})
                     )
                     result = conn.execute(stmt)
                 else:

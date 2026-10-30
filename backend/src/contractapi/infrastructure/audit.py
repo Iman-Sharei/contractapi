@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -25,7 +25,7 @@ def audit_event(
 ) -> None:
     settings = get_settings()
     event = {
-        "ts": datetime.now(UTC).isoformat(),
+        "ts": datetime.now(timezone.utc).isoformat(),
         "action": action,
         "endpoint": endpoint,
         "resource_id": resource_id,
