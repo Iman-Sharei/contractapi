@@ -2,7 +2,12 @@ from fastapi.testclient import TestClient
 
 from contractapi.application.jobs import create_job, get_job, run_job
 from contractapi.application.studio_service import activate_spec, spec_store
+from contractapi.core.config import get_settings
 from contractapi.interfaces.http.app_factory import create_studio_app
+
+
+def _studio_headers() -> dict[str, str]:
+    return {"X-API-Key": get_settings().studio_api_key}
 
 
 def setup_function() -> None:
@@ -57,7 +62,7 @@ def test_multi_active_list_and_mounts():
     assert spec_store.active_name == "alpha"
 
     client = TestClient(create_studio_app())
-    listed = client.get("/studio/active/list", headers={"X-API-Key": "dev-studio-key-change-me"})
+    listed = client.get("/studio/active/list", headers=_studio_headers())
     assert listed.status_code == 200
     names = {a["name"] for a in listed.json()["apis"]}
     assert names == {"alpha", "beta"}
@@ -94,7 +99,7 @@ def test_job_local_lifecycle():
 
 def test_oidc_disabled_still_accepts_api_key():
     client = TestClient(create_studio_app())
-    res = client.get("/studio/health", headers={"X-API-Key": "dev-studio-key-change-me"})
+    res = client.get("/studio/health", headers=_studio_headers())
     assert res.status_code == 200
 
     bad = client.get("/studio/health")

@@ -7,12 +7,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from contractapi.application.studio_service import spec_store
+from contractapi.core.config import get_settings
 from contractapi.infrastructure.runtime_store import clear_active
 from contractapi.interfaces.http.app_factory import create_studio_app
 
 
-STUDIO = {"X-API-Key": "dev-studio-key-change-me"}
 DB = "postgresql://postgres:postgres@localhost:5433/app"
+
+
+def _studio_headers() -> dict[str, str]:
+    return {"X-API-Key": get_settings().studio_api_key}
 
 
 def _pg_or_skip():
@@ -48,7 +52,7 @@ def test_studio_to_data_smoke():
 
     intro = client.post(
         "/studio/introspect",
-        headers=STUDIO,
+        headers=_studio_headers(),
         json={"database_url": DB, "schema": "public"},
     )
     assert intro.status_code == 200, intro.text
@@ -68,10 +72,10 @@ def test_studio_to_data_smoke():
             }
         ],
     }
-    saved = client.post("/studio/specs", headers=STUDIO, json={"name": "smoke", "spec": spec})
+    saved = client.post("/studio/specs", headers=_studio_headers(), json={"name": "smoke", "spec": spec})
     assert saved.status_code == 200, saved.text
 
-    act = client.post("/studio/activate", headers=STUDIO, json={"spec": spec, "name": "smoke"})
+    act = client.post("/studio/activate", headers=_studio_headers(), json={"spec": spec, "name": "smoke"})
     assert act.status_code == 200, act.text
 
     data = client.get("/data/v1/customers?limit=1")
