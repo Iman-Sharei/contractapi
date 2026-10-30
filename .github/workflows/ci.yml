@@ -1,0 +1,86 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]"
+      - name: Init demo schema
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from sqlalchemy import create_engine, text
+          sql = Path("examples/init.sql").read_text()
+          eng = create_engine("postgresql+psycopg://postgres:postgres@localhost:5433/app")
+          with eng.begin() as conn:
+              for stmt in sql.split(";"):
+                  s = stmt.strip()
+                  if s:
+                      conn.execute(text(s))
+          print("schema ok")
+          PY
+      - name: Unit + contract + smoke
+        env:
+          JWT_SECRET: ci-test-secret-not-for-prod
+          STUDIO_API_KEY: ci-studio-key
+          DATA_API_KEYS: ci-data-key
+          AUDIT_LOG_PATH: /tmp/dataapi-audit.jsonl
+          SPECS_DIR: /tmp/dataapi-specs
+          DATAAPI_EXPERIMENTAL: all
+          RESTORE_ACTIVE_ON_BOOT: "false"
+        run: pytest -q --tb=short
+      - name: Build sdist/wheel
+        if: matrix.python-version == '3.12'
+        run: |
+          pip install build
+          python -m build
+          twine check dist/*
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck

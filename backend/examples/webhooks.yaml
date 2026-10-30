@@ -1,0 +1,35 @@
+# Write API that POSTs HMAC-signed webhooks on create/update/delete.
+database:
+  url: postgresql://postgres:postgres@localhost:5433/app
+
+app:
+  title: Webhooks Demo
+  version: 0.3.0
+  read_only: false
+  auth: api_key
+  api_prefix: /v1
+  ip_allowlist: []
+  webhooks:
+    - url: https://webhook.site/your-id
+      events: [create, update, delete]
+      secret: change-me-webhook-secret
+      timeout_seconds: 3
+  idempotency:
+    enabled: true
+    required_for_writes: false
+
+endpoints:
+  - name: customers
+    path: /customers
+    table: customers
+    methods: [GET, POST, PATCH, DELETE]
+    fields: [id, name, email, created_at]
+    writable_fields: [name, email]
+    filters: [email]
+    sortable: [id]
+    soft_delete:
+      column: deleted_at
+    pagination:
+      mode: offset
+      default_limit: 20
+      max_limit: 50

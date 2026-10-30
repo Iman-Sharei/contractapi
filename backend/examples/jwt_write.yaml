@@ -1,0 +1,52 @@
+# JWT + writable customers (demo). Requires JWT_SECRET env.
+database:
+  url: postgresql://postgres:postgres@localhost:5433/app
+
+app:
+  title: JWT Write Demo
+  version: 0.3.0
+  description: Write-enabled API with JWT roles and field RBAC.
+  read_only: false
+  auth: jwt
+  api_prefix: /v1
+  cache:
+    enabled: true
+    ttl_seconds: 15
+  idempotency:
+    enabled: true
+    required_for_writes: false
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+  rbac:
+    - role: analyst
+      endpoints:
+        customers: [id, name, email, created_at, updated_at]
+    - role: viewer
+      endpoints:
+        customers: [id, name]
+
+endpoints:
+  - name: customers
+    path: /customers
+    table: customers
+    methods: [GET, POST, PATCH, DELETE]
+    primary_key: id
+    fields: [id, name, email, created_at, updated_at]
+    writable_fields: [name, email]
+    filters: [email, name]
+    sortable: [id, created_at, name]
+    etag_field: updated_at
+    soft_delete:
+      column: deleted_at
+    validations:
+      - field: email
+        format: email
+        min_length: 5
+    bulk_enabled: true
+    csv_export: true
+    roles: [analyst, admin]
+    pagination:
+      mode: offset
+      default_limit: 20
+      max_limit: 100

@@ -1,0 +1,81 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dataapi-pg"
+version = "0.5.0b1"
+description = "Spec-first Postgres → FastAPI builder: opt-in endpoints, field allowlists, safe queries, OpenAPI."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Iman Sharei" }]
+keywords = ["fastapi", "postgresql", "openapi", "api", "data-engineering"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: FastAPI",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+]
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "sqlalchemy>=2.0.36",
+  "psycopg[binary]>=3.2.0",
+  "pydantic>=2.9.0",
+  "pydantic-settings>=2.6.0",
+  "pyyaml>=6.0.2",
+  "typer>=0.12.0",
+  "rich>=13.9.0",
+  "PyJWT>=2.9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/imansharei/dataapi"
+Documentation = "https://github.com/imansharei/dataapi#readme"
+Issues = "https://github.com/imansharei/dataapi/issues"
+Changelog = "https://github.com/imansharei/dataapi/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+redis = ["redis>=5.0.0"]
+parquet = ["pyarrow>=17.0.0"]
+duckdb = ["duckdb>=1.1.0", "duckdb-engine>=0.13.0"]
+graphql = ["strawberry-graphql[fastapi]>=0.243.0"]
+oidc = ["cryptography>=43.0.0"]
+all = [
+  "dataapi-pg[redis,parquet,duckdb,graphql,oidc]",
+]
+dev = [
+  "pytest>=8.3.0",
+  "httpx>=0.27.0",
+  "ruff>=0.7.0",
+  "pyarrow>=17.0.0",
+  "cryptography>=43.0.0",
+  "build>=1.2.0",
+  "twine>=5.0.0",
+]
+
+[project.scripts]
+dataapi = "dataapi.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dataapi"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/dataapi" = "dataapi"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/dataapi", "README.md", "examples", "LICENSE", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

@@ -1,0 +1,15 @@
+# Overlay: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+services:
+  api:
+    restart: unless-stopped
+    environment:
+      JOB_QUEUE_ENABLED: "true"
+  worker:
+    profiles: []
+    restart: unless-stopped
+  web:
+    restart: unless-stopped
+  redis:
+    restart: unless-stopped
+  db:
+    restart: unless-stopped

@@ -1,0 +1,28 @@
+# DuckDB warehouse MVP — local analytics file / memory.
+# Requires: pip install 'dataapi[duckdb]'
+# Point url at a .duckdb file or :memory: with views over Parquet.
+database:
+  url: duckdb:///:memory:
+  driver: duckdb
+
+app:
+  title: DuckDB Local Warehouse
+  version: 0.4.0
+  description: Read-oriented warehouse adapter (SQL endpoints recommended).
+  read_only: true
+  auth: none
+  api_prefix: /v1
+
+endpoints:
+  # Prefer sql endpoints with DuckDB — create views in your .duckdb file first.
+  - name: demo
+    path: /demo
+    sql: SELECT 1 AS id, 'ok' AS status
+    primary_key: id
+    fields: [id, status]
+    pagination:
+      mode: offset
+      default_limit: 10
+      max_limit: 50
+    csv_export: true
+    parquet_export: true

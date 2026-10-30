@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-dataapi
+  labels:
+    app: dataapi
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: dataapi
+  template:
+    metadata:
+      labels:
+        app: dataapi
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: STUDIO_API_KEY
+              value: {{ .Values.env.STUDIO_API_KEY | quote }}
+            - name: DATA_API_KEYS
+              value: {{ .Values.env.DATA_API_KEYS | quote }}
+            - name: JWT_SECRET
+              value: {{ .Values.env.JWT_SECRET | quote }}
+            - name: REDIS_URL
+              value: {{ .Values.env.REDIS_URL | quote }}
+            - name: AUDIT_LOG_PATH
+              value: {{ .Values.env.AUDIT_LOG_PATH | quote }}
+            - name: OTEL_EXPORTER_ENDPOINT
+              value: {{ .Values.env.OTEL_EXPORTER_ENDPOINT | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-dataapi
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: dataapi
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 8000

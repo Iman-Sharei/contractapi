@@ -1,0 +1,30 @@
+replicaCount: 1
+
+image:
+  repository: dataapi
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+
+env:
+  STUDIO_API_KEY: "change-me"
+  DATA_API_KEYS: ""
+  JWT_SECRET: "change-me-to-32-chars-minimum!!"
+  REDIS_URL: ""
+  AUDIT_LOG_PATH: /var/log/dataapi/audit.jsonl
+  OTEL_EXPORTER_ENDPOINT: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+postgres:
+  enabled: false
+  url: ""
