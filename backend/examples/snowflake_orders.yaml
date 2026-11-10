@@ -1,0 +1,28 @@
+# Snowflake warehouse driver (optional extra).
+# pip install 'contractapi[snowflake]'
+database:
+  url: snowflake://USER:PASSWORD@ACCOUNT/DATABASE/SCHEMA?warehouse=COMPUTE_WH
+  driver: snowflake
+
+app:
+  title: Snowflake Orders API
+  version: 0.5.0
+  description: Read-only contract over a Snowflake schema
+  read_only: true
+  auth: api_key
+  api_prefix: ""
+
+endpoints:
+  - name: orders
+    path: /orders
+    table: ORDERS
+    schema: PUBLIC
+    methods: [GET]
+    primary_key: ORDER_ID
+    fields: [ORDER_ID, STATUS, AMOUNT]
+    filters: [STATUS]
+    sortable: [ORDER_ID]
+    pagination:
+      mode: offset
+      default_limit: 50
+      max_limit: 500

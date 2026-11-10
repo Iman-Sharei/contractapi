@@ -18,13 +18,25 @@ endpoints:
       table: orders
       schema: public
       group_by: [status]
+      where:
+        - field: amount
+          op: gt
+          value: 0
       metrics:
         - name: order_count
           op: count
         - name: revenue
           op: sum
           field: amount
-    description: Orders grouped by status
+      having:
+        - metric: revenue
+          op: gte
+          value: 10
+      windows:
+        - name: status_rank
+          op: rank
+          order_by: [status]
+    description: Orders grouped by status (filters + HAVING + window)
     pagination:
       mode: offset
       default_limit: 50

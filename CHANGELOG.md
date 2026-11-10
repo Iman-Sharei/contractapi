@@ -21,6 +21,12 @@ All notable changes to this project are documented here.
 - **GraphQL:** SQL endpoint reads + `createItem` / `updateItem` / `deleteItem` mutations for allowlisted table methods
 - **GraphQL:** nested `relations` on reads + `roles` arg for RBAC field allowlists
 - **Aggregation DSL:** `aggregate:` (group_by + count/sum/avg/min/max) compiles to SQL; Studio SQL tab editor + example
+- **Aggregation DSL richer:** `where` / `having` / `windows` (row_number, rank, sum/avg/count)
+- **Snowflake + BigQuery drivers** (optional extras) + Studio driver selector + examples
+- **GraphQL:** row-level `claims` arg (REST RLS parity) + poll-based `endpointStream` subscription
+- **dbt import:** `POST /studio/import/dbt` (schema.yml or manifest.json → endpoint drafts)
+- **Git browser:** `/studio/git/*` + Studio Tools page
+- **OIDC cookie BFF:** `/studio/oidc/{login,callback,logout,me}` (+ client_id / redirect_uri env)
 
 ### Quality
 - Backend e2e: activate with empty prefix → `GET /data/customers`

@@ -18,17 +18,22 @@ def _constant_time_equals(a: str, b: str) -> bool:
 
 
 def require_studio_api_key(
+    request: Request,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
     authorization: Annotated[str | None, Header()] = None,
 ) -> str:
     """
-    Studio auth: X-API-Key (break-glass / CLI) OR Bearer OIDC token when configured.
+    Studio auth: X-API-Key (break-glass / CLI), Bearer OIDC, or httpOnly OIDC cookie.
     """
     settings = get_settings()
     if x_api_key and _constant_time_equals(x_api_key, settings.studio_api_key):
         return "api_key"
 
-    from contractapi.infrastructure.security.oidc import oidc_enabled, verify_studio_oidc_token
+    from contractapi.infrastructure.security.oidc import (
+        oidc_cookie_name,
+        oidc_enabled,
+        verify_studio_oidc_token,
+    )
 
     if oidc_enabled(settings) and authorization:
         scheme, _, token = authorization.partition(" ")
@@ -36,9 +41,15 @@ def require_studio_api_key(
             verify_studio_oidc_token(token.strip(), settings)
             return "oidc"
 
+    if oidc_enabled(settings):
+        cookie_token = request.cookies.get(oidc_cookie_name(settings))
+        if cookie_token:
+            verify_studio_oidc_token(cookie_token, settings)
+            return "oidc_cookie"
+
     detail = "Missing or invalid X-API-Key for studio."
     if oidc_enabled(settings):
-        detail = "Provide X-API-Key or a valid OIDC Bearer token."
+        detail = "Provide X-API-Key, OIDC Bearer token, or OIDC session cookie."
     raise AppError(
         type_="https://contractapi.dev/problems/unauthorized",
         title="Unauthorized",

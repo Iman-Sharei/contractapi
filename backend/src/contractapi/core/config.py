@@ -80,6 +80,27 @@ class Settings(BaseSettings):
         default="",
         description="Comma-separated emails allowed into Studio; empty = any valid token.",
     )
+    studio_oidc_client_id: str = Field(
+        default="",
+        description="OIDC confidential/public client id for browser cookie login.",
+    )
+    studio_oidc_client_secret: str = Field(
+        default="",
+        description="OIDC client secret (optional for public clients / PKCE later).",
+    )
+    studio_oidc_redirect_uri: str = Field(
+        default="",
+        description="Must match IdP app config, e.g. http://localhost:8000/studio/oidc/callback",
+    )
+    studio_oidc_post_login_url: str = Field(
+        default="http://localhost:3000",
+        description="Frontend origin prefixed to return_to after OIDC callback.",
+    )
+    studio_oidc_cookie_name: str = Field(default="contractapi_oidc")
+    studio_oidc_cookie_secure: bool = Field(
+        default=False,
+        description="Set Secure on OIDC cookies (true behind HTTPS).",
+    )
     # Reserved for future opt-in surfaces. OIDC, queue, multi_active, Parquet,
     # DuckDB, and GraphQL are GA (config/extras only — no experimental gate).
     experimental: str = Field(

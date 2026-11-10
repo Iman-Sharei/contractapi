@@ -89,9 +89,40 @@ def create_duckdb_engine(url: str) -> Engine:
     return create_engine(sa_url)
 
 
+def create_snowflake_engine(url: str) -> Engine:
+    """Snowflake via snowflake-sqlalchemy. URL: snowflake://user:pass@account/db/schema."""
+    try:
+        import snowflake.sqlalchemy  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "Install Snowflake support with: pip install 'contractapi[snowflake]'"
+        ) from exc
+    return create_engine(url)
+
+
+def create_bigquery_engine(url: str) -> Engine:
+    """
+    BigQuery via sqlalchemy-bigquery.
+    URL examples:
+      bigquery://project/dataset
+      bigquery://project/dataset?credentials_path=/path/key.json
+    """
+    try:
+        import sqlalchemy_bigquery  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "Install BigQuery support with: pip install 'contractapi[bigquery]'"
+        ) from exc
+    return create_engine(url)
+
+
 def create_engine_for_config(config: DatabaseConfig, *, pooled: bool = True) -> Engine:
     if config.driver == DatabaseDriver.DUCKDB:
         return create_duckdb_engine(config.url)
+    if config.driver == DatabaseDriver.SNOWFLAKE:
+        return create_snowflake_engine(config.url)
+    if config.driver == DatabaseDriver.BIGQUERY:
+        return create_bigquery_engine(config.url)
     return create_pg_engine(config.url, pooled=pooled)
 
 

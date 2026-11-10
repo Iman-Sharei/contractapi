@@ -41,17 +41,98 @@ router = APIRouter(
 )
 
 
+@router.post("/import/dbt")
+def studio_import_dbt(body: dict[str, Any]) -> dict[str, Any]:
+    """Convert dbt schema.yml or manifest.json JSON into endpoint drafts."""
+    from contractapi.application.dbt_import import import_dbt_payload
+
+    payload = body.get("manifest") if "manifest" in body else body.get("schema") or body
+    if payload is None:
+        raise AppError(
+            type_="https://contractapi.dev/problems/validation",
+            title="Validation Error",
+            status=422,
+            detail="Provide dbt schema.yml JSON or manifest.json under 'schema' / 'manifest'.",
+        )
+    return import_dbt_payload(payload)
+
+
+@router.get("/git/status")
+def studio_git_status(repo: str | None = None) -> dict[str, Any]:
+    from contractapi.application.git_browser import GitBrowserError, git_status
+
+    try:
+        return git_status(repo)
+    except GitBrowserError as exc:
+        raise AppError(
+            type_="https://contractapi.dev/problems/bad-request",
+            title="Git error",
+            status=400,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/git/branches")
+def studio_git_branches(repo: str | None = None) -> dict[str, Any]:
+    from contractapi.application.git_browser import GitBrowserError, list_branches
+
+    try:
+        return list_branches(repo)
+    except GitBrowserError as exc:
+        raise AppError(
+            type_="https://contractapi.dev/problems/bad-request",
+            title="Git error",
+            status=400,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/git/tree")
+def studio_git_tree(
+    repo: str | None = None, ref: str = "HEAD", path: str = ""
+) -> dict[str, Any]:
+    from contractapi.application.git_browser import GitBrowserError, list_tree
+
+    try:
+        return list_tree(repo, ref=ref, path=path)
+    except GitBrowserError as exc:
+        raise AppError(
+            type_="https://contractapi.dev/problems/bad-request",
+            title="Git error",
+            status=400,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/git/file")
+def studio_git_file(
+    path: str, repo: str | None = None, ref: str = "HEAD"
+) -> dict[str, Any]:
+    from contractapi.application.git_browser import GitBrowserError, read_file
+
+    try:
+        return read_file(repo, ref=ref, path=path)
+    except GitBrowserError as exc:
+        raise AppError(
+            type_="https://contractapi.dev/problems/bad-request",
+            title="Git error",
+            status=400,
+            detail=str(exc),
+        ) from exc
+
+
 @router.get("/health")
 def studio_health() -> dict[str, Any]:
     from contractapi.application.graphql_facade import graphql_available
     from contractapi.core.config import get_settings
-    from contractapi.infrastructure.security.oidc import oidc_enabled
+    from contractapi.infrastructure.security.oidc import oidc_browser_enabled, oidc_enabled
 
     settings = get_settings()
     return {
         "status": "ok",
         "plane": "studio",
         "oidc": oidc_enabled(settings),
+        "oidc_browser": oidc_browser_enabled(settings),
         "job_queue": bool(settings.job_queue_enabled and settings.redis_url),
         "multi_active": True,
         "graphql": graphql_available(),

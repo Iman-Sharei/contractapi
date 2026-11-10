@@ -47,8 +47,10 @@ parquet = ["pyarrow>=17.0.0"]
 duckdb = ["duckdb>=1.1.0", "duckdb-engine>=0.13.0"]
 graphql = ["strawberry-graphql[fastapi]>=0.243.0"]
 oidc = ["cryptography>=43.0.0"]
+snowflake = ["snowflake-sqlalchemy>=1.6.0"]
+bigquery = ["sqlalchemy-bigquery>=1.11.0"]
 all = [
-  "contractapi[redis,parquet,duckdb,graphql,oidc]",
+  "contractapi[redis,parquet,duckdb,graphql,oidc,snowflake,bigquery]",
 ]
 dev = [
   "pytest>=8.3.0",

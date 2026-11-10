@@ -10,6 +10,7 @@ const links = [
   { href: "/studio/new", label: "New", match: (p: string) => p.startsWith("/studio/new") },
   { href: "/studio/diff", label: "Diff", match: (p: string) => p.startsWith("/studio/diff") },
   { href: "/studio/ops", label: "Ops", match: (p: string) => p.startsWith("/studio/ops") },
+  { href: "/studio/tools", label: "Tools", match: (p: string) => p.startsWith("/studio/tools") },
 ];
 
 export function StudioNav() {

@@ -14,10 +14,46 @@ from contractapi.domain.models.spec import ApiSpec, EndpointSpec, HttpMethod
 _IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 try:
+    import asyncio
+    from collections.abc import AsyncGenerator
+
     import strawberry
     from strawberry.fastapi import GraphQLRouter
     from strawberry.scalars import JSON
     from strawberry.types import Info
+
+    def _resolve_endpoint_rows(
+        info: Info,
+        name: str,
+        limit: int,
+        params: JSON | None,
+        include_relations: bool,
+        roles: list[str] | None,
+        claims: JSON | None,
+    ) -> list[dict[str, Any]]:
+        endpoints: dict[str, EndpointSpec] = info.context["endpoints"]
+        engine: Engine = info.context["engine"]
+        spec: ApiSpec = info.context["spec"]
+        ep = endpoints.get(name)
+        if ep is None:
+            raise ValueError(
+                f"Unknown or non-GraphQL endpoint '{name}'. "
+                f"Allowed: {sorted(endpoints)}"
+            )
+        bind = params if isinstance(params, dict) else {}
+        claim_map = claims if isinstance(claims, dict) else {}
+        rows = _fetch_rows(
+            engine,
+            ep,
+            limit,
+            bind_params=bind,
+            claims=claim_map,
+        )
+        if include_relations and (not ep.is_sql) and ep.relations:
+            from contractapi.application.relations import load_relations
+
+            load_relations(engine, MetaData(), ep.relations, rows)
+        return _apply_rbac(spec, ep, rows, roles or [])
 
     @strawberry.type
     class Query:
@@ -30,23 +66,11 @@ try:
             params: JSON | None = None,
             include_relations: bool = True,
             roles: list[str] | None = None,
+            claims: JSON | None = None,
         ) -> list[JSON]:
-            endpoints: dict[str, EndpointSpec] = info.context["endpoints"]
-            engine: Engine = info.context["engine"]
-            spec: ApiSpec = info.context["spec"]
-            ep = endpoints.get(name)
-            if ep is None:
-                raise ValueError(
-                    f"Unknown or non-GraphQL endpoint '{name}'. "
-                    f"Allowed: {sorted(endpoints)}"
-                )
-            bind = params if isinstance(params, dict) else {}
-            rows = _fetch_rows(engine, ep, limit, bind_params=bind)
-            if include_relations and (not ep.is_sql) and ep.relations:
-                from contractapi.application.relations import load_relations
-
-                load_relations(engine, MetaData(), ep.relations, rows)
-            return _apply_rbac(spec, ep, rows, roles or [])
+            return _resolve_endpoint_rows(
+                info, name, limit, params, include_relations, roles, claims
+            )
 
         @strawberry.field
         def available_endpoints(self, info: Info) -> list[str]:
@@ -75,7 +99,30 @@ try:
         def delete_item(self, info: Info, endpoint: str, id: JSON) -> JSON:
             return _mutate_delete(info, endpoint, id)
 
-    _GRAPHQL_SCHEMA = strawberry.Schema(query=Query, mutation=Mutation)
+    @strawberry.type
+    class Subscription:
+        @strawberry.subscription
+        async def endpoint_stream(
+            self,
+            info: Info,
+            name: str,
+            limit: int = 20,
+            interval_seconds: float = 2.0,
+            include_relations: bool = False,
+            roles: list[str] | None = None,
+            claims: JSON | None = None,
+        ) -> AsyncGenerator[list[JSON], None]:
+            """Poll-based subscription MVP (WebSocket)."""
+            delay = max(0.5, min(float(interval_seconds), 30.0))
+            while True:
+                yield _resolve_endpoint_rows(
+                    info, name, limit, None, include_relations, roles, claims
+                )
+                await asyncio.sleep(delay)
+
+    _GRAPHQL_SCHEMA = strawberry.Schema(
+        query=Query, mutation=Mutation, subscription=Subscription
+    )
     _GRAPHQL_READY = True
 except ImportError:  # pragma: no cover - optional extra
     GraphQLRouter = None  # type: ignore[misc, assignment]
@@ -136,35 +183,51 @@ def _fetch_sql_rows(
     return [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows]
 
 
+def _security_sql(
+    ep: EndpointSpec, claims: dict[str, Any]
+) -> tuple[list[str], dict[str, Any]]:
+    """Soft-delete + row-level clauses for GraphQL table reads (REST parity)."""
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if ep.soft_delete and ep.soft_delete.column:
+        clauses.append(f"{_quote_ident(ep.soft_delete.column)} IS NULL")
+    if ep.row_level and ep.row_level.column:
+        value = claims.get(ep.row_level.claim)
+        if value is None and ep.row_level.required:
+            raise ValueError(
+                f"Missing claim '{ep.row_level.claim}' for row-level access on '{ep.name}'."
+            )
+        if value is not None:
+            clauses.append(f"{_quote_ident(ep.row_level.column)} = :_rl_claim")
+            params["_rl_claim"] = value
+    return clauses, params
+
+
 def _fetch_rows(
     engine: Engine,
     ep: EndpointSpec,
     limit: int,
     *,
     bind_params: dict[str, Any] | None = None,
+    claims: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     limit = max(1, min(limit, ep.pagination.max_limit))
     if ep.is_sql:
         return _fetch_sql_rows(engine, ep, limit, bind_params=bind_params)
-    try:
-        table = _load_table(engine, ep)
-        cols = [table.c[c] for c in ep.fields if c in table.c]
-        if not cols:
-            raise RuntimeError("no columns")
-        with engine.connect() as conn:
-            rows = conn.execute(select(*cols).limit(limit)).mappings().all()
-        return [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows]
-    except Exception:
-        fields_sql = ", ".join(_quote_ident(f) for f in ep.fields)
-        schema = ep.schema_name
-        if schema and schema not in {"main", ""}:
-            table_sql = f"{_quote_ident(schema)}.{_quote_ident(ep.table)}"
-        else:
-            table_sql = _quote_ident(ep.table)
-        sql = text(f"SELECT {fields_sql} FROM {table_sql} LIMIT :limit")
-        with engine.connect() as conn:
-            rows = conn.execute(sql, {"limit": limit}).mappings().all()
-        return [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows]
+    claim_map = claims or {}
+    sec_clauses, sec_params = _security_sql(ep, claim_map)
+    fields_sql = ", ".join(_quote_ident(f) for f in ep.fields)
+    schema = ep.schema_name
+    if schema and schema not in {"main", ""}:
+        table_sql = f"{_quote_ident(schema)}.{_quote_ident(ep.table)}"
+    else:
+        table_sql = _quote_ident(ep.table)
+    where = f" WHERE {' AND '.join(sec_clauses)}" if sec_clauses else ""
+    sql = text(f"SELECT {fields_sql} FROM {table_sql}{where} LIMIT :limit")
+    params = {"limit": limit, **sec_params}
+    with engine.connect() as conn:
+        rows = conn.execute(sql, params).mappings().all()
+    return [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows]
 
 
 def _apply_rbac(

@@ -15,9 +15,11 @@
 
 - Parquet list export (`pyarrow`)
 - DuckDB driver
-- GraphQL facade (`strawberry`) — table + SQL reads, nested relations, RBAC `roles` arg; table mutations
-- Aggregation DSL (`aggregate:`) — count/sum/avg/min/max + group_by
-- Studio OIDC JWKS (`STUDIO_OIDC_ISSUER`) — API key remains break-glass
+- GraphQL facade (`strawberry`) — table + SQL reads, nested relations, RBAC/`claims` RLS, mutations, poll subscriptions
+- Aggregation DSL (`aggregate:`) — metrics + where/having/windows
+- Snowflake / BigQuery drivers (optional extras)
+- Studio OIDC JWKS + browser cookie BFF (`STUDIO_OIDC_*`) — API key remains break-glass
+- dbt import + git branch browser in Studio
 - Redis horizontal job queue + `contractapi worker`
 - Multi-active `/apis/{name}` alongside primary `/data`
 

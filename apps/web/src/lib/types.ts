@@ -94,11 +94,34 @@ export type AggregateMetricDraft = {
   field?: string | null;
 };
 
+export type AggregateFilterDraft = {
+  field: string;
+  op: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in";
+  value?: unknown;
+};
+
+export type AggregateHavingDraft = {
+  metric: string;
+  op: "eq" | "ne" | "gt" | "gte" | "lt" | "lte";
+  value: number;
+};
+
+export type AggregateWindowDraft = {
+  name: string;
+  op: "row_number" | "rank" | "sum" | "avg" | "count";
+  field?: string | null;
+  partition_by?: string[];
+  order_by?: string[];
+};
+
 export type AggregateDraft = {
   table: string;
   schema?: string;
   group_by: string[];
   metrics: AggregateMetricDraft[];
+  where?: AggregateFilterDraft[];
+  having?: AggregateHavingDraft[];
+  windows?: AggregateWindowDraft[];
 };
 
 export type EndpointDraft = {
@@ -139,7 +162,7 @@ export type EndpointDraft = {
   parquet_export?: boolean;
 };
 
-export type DatabaseDriver = "postgres" | "duckdb";
+export type DatabaseDriver = "postgres" | "duckdb" | "snowflake" | "bigquery";
 
 export type ApiSpecDraft = {
   database: { url: string; driver?: DatabaseDriver };

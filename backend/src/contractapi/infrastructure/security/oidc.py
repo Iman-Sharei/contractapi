@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from functools import lru_cache
 from typing import Any
 
@@ -17,6 +21,7 @@ logger = get_logger("contractapi.oidc")
 
 _jwks_clients: dict[str, PyJWKClient] = {}
 _discovery_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+DEFAULT_OIDC_COOKIE = "contractapi_oidc"
 
 
 def oidc_enabled(settings: Settings | None = None) -> bool:
@@ -25,20 +30,82 @@ def oidc_enabled(settings: Settings | None = None) -> bool:
     return bool(s.studio_oidc_issuer.strip())
 
 
+def oidc_browser_enabled(settings: Settings | None = None) -> bool:
+    """Cookie login needs issuer + client_id + redirect_uri."""
+    s = settings or get_settings()
+    return bool(
+        s.studio_oidc_issuer.strip()
+        and s.studio_oidc_client_id.strip()
+        and s.studio_oidc_redirect_uri.strip()
+    )
+
+
+def oidc_cookie_name(settings: Settings | None = None) -> str:
+    s = settings or get_settings()
+    return (s.studio_oidc_cookie_name or DEFAULT_OIDC_COOKIE).strip() or DEFAULT_OIDC_COOKIE
+
+
+def oidc_discovery(issuer: str) -> dict[str, Any]:
+    return _discover(issuer)
+
+
 def _discover(issuer: str) -> dict[str, Any]:
     now = time.time()
     cached = _discovery_cache.get(issuer)
     if cached and cached[0] > now:
         return cached[1]
     url = issuer.rstrip("/") + "/.well-known/openid-configuration"
-    import urllib.request
-
     with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310
-        import json
-
         data = json.loads(resp.read().decode("utf-8"))
     _discovery_cache[issuer] = (now + 3600, data)
     return data
+
+
+def exchange_code_for_tokens(code: str, settings: Settings | None = None) -> dict[str, Any]:
+    """Authorization-code exchange for browser OIDC cookie login."""
+    s = settings or get_settings()
+    if not oidc_browser_enabled(s):
+        raise AppError(
+            type_="https://contractapi.dev/problems/misconfigured",
+            title="OIDC browser login disabled",
+            status=503,
+            detail="OIDC client_id / redirect_uri not configured.",
+        )
+    meta = _discover(s.studio_oidc_issuer.strip())
+    token_url = meta.get("token_endpoint")
+    if not token_url:
+        raise AppError(
+            type_="https://contractapi.dev/problems/misconfigured",
+            title="OIDC misconfigured",
+            status=500,
+            detail="token_endpoint missing from discovery document.",
+        )
+    body = urllib.parse.urlencode(
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": s.studio_oidc_redirect_uri.strip(),
+            "client_id": s.studio_oidc_client_id.strip(),
+            "client_secret": s.studio_oidc_client_secret,
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(  # noqa: S310
+        token_url,
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:300]
+        raise AppError(
+            type_="https://contractapi.dev/problems/unauthorized",
+            title="Unauthorized",
+            status=401,
+            detail=f"Token exchange failed: {detail}",
+        ) from exc
 
 
 def _jwks_client(settings: Settings) -> PyJWKClient:

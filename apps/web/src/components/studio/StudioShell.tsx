@@ -44,6 +44,12 @@ const emptyJwt = () => ({
 
 const PG_DEFAULT_URL = "postgresql://postgres:postgres@db:5432/app";
 const DUCKDB_DEFAULT_URL = "duckdb:///:memory:";
+const SNOWFLAKE_DEFAULT_URL = "snowflake://USER:PASSWORD@ACCOUNT/DB/SCHEMA?warehouse=WH";
+const BIGQUERY_DEFAULT_URL = "bigquery://project/dataset";
+
+function isWarehouseDriver(d: DatabaseDriver): boolean {
+  return d === "duckdb" || d === "snowflake" || d === "bigquery";
+}
 
 const emptySpec = (url: string, driver: DatabaseDriver = "postgres"): ApiSpecDraft => ({
   database: { url, driver },
@@ -266,10 +272,10 @@ export function StudioShell({
 
   function onIntrospect() {
     setStatus(null);
-    if (dbDriver === "duckdb") {
-      setSpec((prev) => ({ ...prev, database: { url: dbUrl, driver: "duckdb" } }));
+    if (isWarehouseDriver(dbDriver)) {
+      setSpec((prev) => ({ ...prev, database: { url: dbUrl, driver: dbDriver } }));
       setStatus(
-        "DuckDB: table introspect is Postgres-only. Add a SQL endpoint and Discover columns, or activate a file-backed warehouse.",
+        `${dbDriver}: table introspect is Postgres-only. Add a SQL/aggregate endpoint or activate with known fields.`,
       );
       return;
     }
@@ -288,31 +294,40 @@ export function StudioShell({
 
   function onDriverChange(next: DatabaseDriver) {
     setDbDriver(next);
-    if (next === "duckdb") {
-      if (dbUrl.startsWith("postgresql") || dbUrl.startsWith("postgres")) {
-        setDbUrl(DUCKDB_DEFAULT_URL);
-      }
+    const defaults: Record<DatabaseDriver, string> = {
+      postgres: PG_DEFAULT_URL,
+      duckdb: DUCKDB_DEFAULT_URL,
+      snowflake: SNOWFLAKE_DEFAULT_URL,
+      bigquery: BIGQUERY_DEFAULT_URL,
+    };
+    let nextUrl = dbUrl;
+    if (isWarehouseDriver(next) && (dbUrl.startsWith("postgresql") || dbUrl.startsWith("postgres"))) {
+      nextUrl = defaults[next];
+      setDbUrl(nextUrl);
       setTables([]);
       setSelectedTable(null);
-    } else if (dbUrl.startsWith("duckdb") || dbUrl === ":memory:" || dbUrl === DUCKDB_DEFAULT_URL) {
-      setDbUrl(PG_DEFAULT_URL);
+    } else if (
+      next === "postgres" &&
+      (dbUrl.startsWith("duckdb") ||
+        dbUrl.startsWith("snowflake") ||
+        dbUrl.startsWith("bigquery") ||
+        dbUrl === ":memory:")
+    ) {
+      nextUrl = PG_DEFAULT_URL;
+      setDbUrl(nextUrl);
+    } else if (isWarehouseDriver(next)) {
+      nextUrl = defaults[next];
+      setDbUrl(nextUrl);
+      setTables([]);
+      setSelectedTable(null);
     }
+    setSchema(next === "duckdb" ? "main" : "public");
     setSpec((prev) => ({
       ...prev,
-      database: {
-        url:
-          next === "duckdb"
-            ? dbUrl.startsWith("postgresql") || dbUrl.startsWith("postgres")
-              ? DUCKDB_DEFAULT_URL
-              : dbUrl
-            : dbUrl.startsWith("duckdb") || dbUrl === ":memory:"
-              ? PG_DEFAULT_URL
-              : dbUrl,
-        driver: next,
-      },
+      database: { url: nextUrl, driver: next },
       app: {
         ...prev.app,
-        read_only: next === "duckdb" ? true : prev.app.read_only,
+        read_only: isWarehouseDriver(next) ? true : prev.app.read_only,
       },
     }));
   }
@@ -651,16 +666,20 @@ export function StudioShell({
         skipDirty.current = true;
         setSpec(loaded.spec);
         setDbUrl(loaded.spec.database.url);
-        const drv = loaded.spec.database.driver === "duckdb" ? "duckdb" : "postgres";
+        const rawDrv = loaded.spec.database.driver || "postgres";
+        const drv: DatabaseDriver =
+          rawDrv === "duckdb" || rawDrv === "snowflake" || rawDrv === "bigquery"
+            ? rawDrv
+            : "postgres";
         setDbDriver(drv);
         setSpecName(name);
         setActiveEndpoint(loaded.spec.endpoints[0]?.name ?? null);
         setDirty(false);
         setStatus(`Loaded spec '${name}'.`);
         const schemaHint = loaded.spec.endpoints[0]?.schema || "public";
-        if (drv === "duckdb") {
+        if (isWarehouseDriver(drv)) {
           setTables([]);
-          setMessage(`Loaded DuckDB spec '${name}' — use SQL endpoints / Discover columns.`);
+          setMessage(`Loaded ${drv} spec '${name}' — use SQL/aggregate endpoints.`);
           return;
         }
         try {
@@ -836,11 +855,19 @@ export function StudioShell({
             >
               <option value="postgres">Postgres</option>
               <option value="duckdb">DuckDB</option>
+              <option value="snowflake">Snowflake</option>
+              <option value="bigquery">BigQuery</option>
             </select>
           </label>
           <label className={styles.span2}>
             <span className={styles.fieldLabel}>
-              {dbDriver === "duckdb" ? "DuckDB URL" : "Postgres URL"}
+              {dbDriver === "postgres"
+                ? "Postgres URL"
+                : dbDriver === "duckdb"
+                  ? "DuckDB URL"
+                  : dbDriver === "snowflake"
+                    ? "Snowflake URL"
+                    : "BigQuery URL"}
             </span>
             <div className={styles.inputWithBtn}>
               <input
@@ -850,7 +877,13 @@ export function StudioShell({
                 spellCheck={false}
                 autoComplete="off"
                 placeholder={
-                  dbDriver === "duckdb" ? "duckdb:///:memory: or duckdb:///./file.duckdb" : undefined
+                  dbDriver === "duckdb"
+                    ? "duckdb:///:memory: or duckdb:///./file.duckdb"
+                    : dbDriver === "snowflake"
+                      ? "snowflake://user:pass@account/db/schema"
+                      : dbDriver === "bigquery"
+                        ? "bigquery://project/dataset"
+                        : undefined
                 }
               />
               <button
@@ -896,11 +929,26 @@ export function StudioShell({
             />
           </label>
         </div>
-        {dbDriver === "duckdb" && (
+        {isWarehouseDriver(dbDriver) && (
           <p className={styles.hint}>
-            DuckDB is GA for SQL / file warehouses (<code>pip install &apos;contractapi[duckdb]&apos;</code>
-            ). Prefer <strong>Add SQL endpoint</strong> → Discover columns → Activate. Table introspect
-            stays Postgres-only.
+            {dbDriver === "duckdb" && (
+              <>
+                DuckDB is GA (<code>pip install &apos;contractapi[duckdb]&apos;</code>). Prefer SQL /
+                aggregate endpoints. Table introspect stays Postgres-only.
+              </>
+            )}
+            {dbDriver === "snowflake" && (
+              <>
+                Snowflake needs <code>pip install &apos;contractapi[snowflake]&apos;</code>. Define
+                table/SQL endpoints with known fields.
+              </>
+            )}
+            {dbDriver === "bigquery" && (
+              <>
+                BigQuery needs <code>pip install &apos;contractapi[bigquery]&apos;</code>. Define
+                table/SQL endpoints with known fields.
+              </>
+            )}
           </p>
         )}
       </section>

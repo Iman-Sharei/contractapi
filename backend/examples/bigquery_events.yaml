@@ -1,0 +1,28 @@
+# BigQuery warehouse driver (optional extra).
+# pip install 'contractapi[bigquery]'
+database:
+  url: bigquery://my-gcp-project/analytics
+  driver: bigquery
+
+app:
+  title: BigQuery Events API
+  version: 0.5.0
+  description: Read-only contract over a BigQuery dataset
+  read_only: true
+  auth: api_key
+  api_prefix: ""
+
+endpoints:
+  - name: events
+    path: /events
+    table: events
+    schema: analytics
+    methods: [GET]
+    primary_key: event_id
+    fields: [event_id, event_type, ts]
+    filters: [event_type]
+    sortable: [ts]
+    pagination:
+      mode: offset
+      default_limit: 50
+      max_limit: 500

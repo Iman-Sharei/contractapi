@@ -23,7 +23,12 @@ async function proxy(req: NextRequest, pathParts: string[]) {
   const headers = new Headers();
   const ct = req.headers.get("content-type");
   if (ct) headers.set("content-type", ct);
+  // Break-glass API key always available server-side; browser OIDC cookie forwarded too.
   headers.set("X-API-Key", studioKey());
+  const cookie = req.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
+  const authorization = req.headers.get("authorization");
+  if (authorization) headers.set("authorization", authorization);
   const accept = req.headers.get("accept");
   if (accept) headers.set("accept", accept);
 
@@ -42,6 +47,10 @@ async function proxy(req: NextRequest, pathParts: string[]) {
   for (const h of pass) {
     const v = upstream.headers.get(h);
     if (v) outHeaders.set(h, v);
+  }
+  const setCookie = upstream.headers.getSetCookie?.() ?? [];
+  for (const c of setCookie) {
+    outHeaders.append("set-cookie", c);
   }
   const buf = await upstream.arrayBuffer();
   return new NextResponse(buf, { status: upstream.status, headers: outHeaders });

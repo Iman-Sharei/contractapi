@@ -99,8 +99,10 @@ contractapi serve backend/examples/sql_metrics.yaml --data-only
 | [backend/examples/sql_metrics.yaml](backend/examples/sql_metrics.yaml) | SQL metrics + CSV/NDJSON/Parquet |
 | [backend/examples/webhooks.yaml](backend/examples/webhooks.yaml) | Write webhooks with HMAC |
 | [backend/examples/duckdb_local.yaml](backend/examples/duckdb_local.yaml) | DuckDB warehouse driver (GA) |
-| [backend/examples/aggregate_orders.yaml](backend/examples/aggregate_orders.yaml) | Aggregation DSL (GROUP BY metrics) |
-| [backend/examples/oidc_studio.env.example](backend/examples/oidc_studio.env.example) | Studio OIDC + Redis job queue env |
+| [backend/examples/aggregate_orders.yaml](backend/examples/aggregate_orders.yaml) | Aggregation DSL (where/having/windows) |
+| [backend/examples/snowflake_orders.yaml](backend/examples/snowflake_orders.yaml) | Snowflake driver (optional extra) |
+| [backend/examples/bigquery_events.yaml](backend/examples/bigquery_events.yaml) | BigQuery driver (optional extra) |
+| [backend/examples/oidc_studio.env.example](backend/examples/oidc_studio.env.example) | Studio OIDC (JWKS + cookie BFF) + Redis queue |
 
 ## What you get
 
@@ -113,8 +115,7 @@ contractapi serve backend/examples/sql_metrics.yaml --data-only
 
 ## Limits (honest)
 
-- Beta — OIDC / queue / multi-active / Parquet / DuckDB / GraphQL are GA (config or optional extras)  
-- Warehouse beyond **Postgres + DuckDB** (Snowflake/BQ) still future  
+- Beta — OIDC / queue / multi-active / Parquet / DuckDB / GraphQL / Snowflake / BigQuery are GA (config or optional extras)  
 - Multi-active ≠ multi-org SaaS control plane  
 
 More: [docs/PRODUCT_GAPS.md](docs/PRODUCT_GAPS.md) · [docs/UPGRADING.md](docs/UPGRADING.md).

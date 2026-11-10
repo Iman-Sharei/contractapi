@@ -220,12 +220,70 @@ export async function issueToken(
 export async function previewSql(
   databaseUrl: string,
   sql: string,
-  driver: "postgres" | "duckdb" = "postgres",
+  driver: "postgres" | "duckdb" | "snowflake" | "bigquery" = "postgres",
 ) {
   return studioFetch<{ columns: string[]; count: number }>("/sql-preview", {
     method: "POST",
     body: JSON.stringify({ database_url: databaseUrl, sql, driver }),
   });
+}
+
+export async function importDbt(payload: Record<string, unknown> | unknown[]) {
+  return studioFetch<{ source: string; count: number; endpoints: Array<Record<string, unknown>> }>(
+    "/import/dbt",
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function gitStatus(repo?: string) {
+  const q = repo ? `?repo=${encodeURIComponent(repo)}` : "";
+  return studioFetch<{ repo: string; branch: string; sha: string; dirty: boolean }>(`/git/status${q}`);
+}
+
+export async function gitBranches(repo?: string) {
+  const q = repo ? `?repo=${encodeURIComponent(repo)}` : "";
+  return studioFetch<{ repo: string; current: string; branches: string[] }>(`/git/branches${q}`);
+}
+
+export async function gitTree(ref = "HEAD", path = "", repo?: string) {
+  const params = new URLSearchParams({ ref, path });
+  if (repo) params.set("repo", repo);
+  return studioFetch<{
+    repo: string;
+    ref: string;
+    path: string;
+    entries: { name: string; path: string; kind: string }[];
+  }>(`/git/tree?${params}`);
+}
+
+export async function gitFile(path: string, ref = "HEAD", repo?: string) {
+  const params = new URLSearchParams({ path, ref });
+  if (repo) params.set("repo", repo);
+  return studioFetch<{
+    repo: string;
+    ref: string;
+    path: string;
+    content: string;
+    truncated: boolean;
+  }>(`/git/file?${params}`);
+}
+
+export async function oidcMe() {
+  const base =
+    process.env.NEXT_PUBLIC_API_BASE ||
+    process.env.API_BASE ||
+    "http://127.0.0.1:8000";
+  const res = await fetch(`${base.replace(/\/$/, "")}/studio/oidc/me`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`OIDC me failed (${res.status})`);
+  return res.json() as Promise<{
+    authenticated: boolean;
+    browser_login?: boolean;
+    email?: string;
+    sub?: string;
+  }>;
 }
 
 export async function listApiKeys() {
@@ -462,11 +520,41 @@ export function buildYaml(spec: ApiSpecDraft): string {
       lines.push(`      table: ${ep.aggregate.table}`);
       lines.push(`      schema: ${ep.aggregate.schema ?? "public"}`);
       lines.push(`      group_by: [${(ep.aggregate.group_by || []).join(", ")}]`);
+      if (ep.aggregate.where?.length) {
+        lines.push("      where:");
+        for (const w of ep.aggregate.where) {
+          lines.push(`        - field: ${w.field}`);
+          lines.push(`          op: ${w.op}`);
+          lines.push(`          value: ${JSON.stringify(w.value)}`);
+        }
+      }
       lines.push("      metrics:");
       for (const m of ep.aggregate.metrics || []) {
         lines.push(`        - name: ${m.name}`);
         lines.push(`          op: ${m.op}`);
         if (m.field) lines.push(`          field: ${m.field}`);
+      }
+      if (ep.aggregate.having?.length) {
+        lines.push("      having:");
+        for (const h of ep.aggregate.having) {
+          lines.push(`        - metric: ${h.metric}`);
+          lines.push(`          op: ${h.op}`);
+          lines.push(`          value: ${h.value}`);
+        }
+      }
+      if (ep.aggregate.windows?.length) {
+        lines.push("      windows:");
+        for (const win of ep.aggregate.windows) {
+          lines.push(`        - name: ${win.name}`);
+          lines.push(`          op: ${win.op}`);
+          if (win.field) lines.push(`          field: ${win.field}`);
+          if (win.partition_by?.length) {
+            lines.push(`          partition_by: [${win.partition_by.join(", ")}]`);
+          }
+          if (win.order_by?.length) {
+            lines.push(`          order_by: [${win.order_by.join(", ")}]`);
+          }
+        }
       }
     } else if (ep.sql) {
       lines.push("    sql: |");

@@ -27,6 +27,7 @@ from contractapi.infrastructure.db.engine import create_engine_for_config
 from contractapi.interfaces.http.middleware.body_limit import BodySizeLimitMiddleware
 from contractapi.interfaces.http.middleware.request_id import RequestIdMiddleware
 from contractapi.interfaces.http.middleware.security_headers import SecurityHeadersMiddleware
+from contractapi.interfaces.http.studio.oidc_router import router as studio_oidc_router
 from contractapi.interfaces.http.studio.router import router as studio_router
 
 
@@ -215,6 +216,7 @@ def create_studio_app() -> FastAPI:
     _attach_handlers(app)
 
     app.include_router(studio_router)
+    app.include_router(studio_oidc_router)
     app.mount("/data", DataPlaneASGI())
     # Multi-active named mounts are GA.
     app.mount("/apis", MultiApiASGI())
