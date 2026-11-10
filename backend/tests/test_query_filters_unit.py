@@ -42,6 +42,16 @@ def test_parse_eq_and_contains():
     assert len(clauses) == 2
 
 
+def test_parse_soft_alias_single_underscore_op():
+    clauses = parse_filters(
+        [("name_contains", "Ada")],
+        table=_table(),
+        endpoint=_endpoint(),
+        reserved=set(),
+    )
+    assert len(clauses) == 1
+
+
 def test_parse_in_and_reject_unknown():
     clauses = parse_filters(
         [("name__in", "a,b,c")],

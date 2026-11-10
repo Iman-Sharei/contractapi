@@ -162,6 +162,9 @@ def studio_activate(body: ValidateSpecRequest) -> ServeInfoResponse:
             f"Data API '{key}' activated under /data (primary) and /apis/{key}. "
             "Open /data/docs for Swagger."
         ),
+        name=key,
+        mount=f"/apis/{key}",
+        primary=True,
     )
 
 
@@ -172,6 +175,9 @@ def studio_activate_named(name: str, body: ValidateSpecRequest, primary: bool = 
     return ServeInfoResponse(
         message=f"Data API '{name}' activated under /apis/{name}"
         + (" and set as /data primary." if primary else "."),
+        name=name,
+        mount=f"/apis/{name}",
+        primary=primary,
     )
 
 

@@ -12,6 +12,14 @@ class GitBrowserError(RuntimeError):
 
 
 def _run(repo: Path, *args: str, timeout: float = 8.0) -> str:
+    import os
+
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    # Compose mounts host checkout as another UID → mark safe for read-only browse.
+    env["GIT_CONFIG_COUNT"] = "1"
+    env["GIT_CONFIG_KEY_0"] = "safe.directory"
+    env["GIT_CONFIG_VALUE_0"] = "*"
     try:
         proc = subprocess.run(  # noqa: S603
             ["git", *args],
@@ -20,6 +28,7 @@ def _run(repo: Path, *args: str, timeout: float = 8.0) -> str:
             text=True,
             timeout=timeout,
             check=False,
+            env=env,
         )
     except FileNotFoundError as exc:
         raise GitBrowserError("git executable not found") from exc
@@ -32,7 +41,10 @@ def _run(repo: Path, *args: str, timeout: float = 8.0) -> str:
 
 
 def resolve_repo(path: str | None = None) -> Path:
-    root = Path(path or ".").expanduser().resolve()
+    import os
+
+    candidate = path or os.environ.get("GIT_REPO_PATH") or "."
+    root = Path(candidate).expanduser().resolve()
     if not root.exists():
         raise GitBrowserError(f"Path not found: {root}")
     probe = root if root.is_dir() else root.parent

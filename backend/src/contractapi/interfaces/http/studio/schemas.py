@@ -33,6 +33,9 @@ class OpenApiPreviewRequest(BaseModel):
 
 class ServeInfoResponse(BaseModel):
     message: str
+    name: str | None = None
+    mount: str | None = None
+    primary: bool = True
     docs_path: str = "/data/docs"
     openapi_path: str = "/data/openapi.json"
 

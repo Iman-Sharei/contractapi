@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 
 ## 0.5.0 — 2026-11-10 (Beta)
 
+### Deploy / hardening
+- Web Docker build: drop Turbopack + `next/font/google` (runtime CSS fonts) so images build offline
+- CSS Modules purity: move global focus styles to `globals.css`
+- API image installs GA extras (parquet/duckdb/graphql/oidc) + git; mount workspace for git browser
+- Filters accept soft alias `field_op` (e.g. `name_contains`) alongside `field__op`
+- List `include`/`expand` reserved for relation embedding (`include=none` skips)
+- Activate responses include `name` / `mount` / `primary`
+- Scenario matrix: `scripts/deploy_scenario_matrix.sh`; Playwright e2e uses Compose DB host `db`
+
 ### Studio
 - Three-step wizard: Connect → Pick tables/columns → Guards & publish
 - Default API prefix empty (URLs without `/v1`)

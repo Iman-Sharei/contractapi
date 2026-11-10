@@ -93,9 +93,15 @@ def parse_filters(
 
 
 def _split_op(key: str) -> tuple[str, str]:
+    """Split query key into (field, op). Prefer Django-style field__op; also accept field_op."""
     if "__" in key:
         field, op = key.rsplit("__", 1)
         return field, op
+    # Soft alias: name_contains → (name, contains) when the suffix is a known operator.
+    if "_" in key:
+        field, maybe_op = key.rsplit("_", 1)
+        if field and maybe_op in _OPS:
+            return field, maybe_op
     return key, "eq"
 
 

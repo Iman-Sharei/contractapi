@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+// When the API runs in Docker Compose it must reach Postgres as hostname `db`.
+// Override with E2E_DATABASE_URL for host-only API (localhost:5433).
 const DB_URL =
   process.env.E2E_DATABASE_URL ||
-  "postgresql://postgres:postgres@127.0.0.1:5433/app";
+  "postgresql://postgres:postgres@db:5432/app";
 const API_BASE = process.env.API_BASE || "http://127.0.0.1:8000";
 const DATA_KEY = process.env.DATA_API_KEYS || "dev-data-key";
 

@@ -113,6 +113,34 @@ def _row_to_dict(row: Any, fields: list[str]) -> dict[str, Any]:
     return {f: _serialize(mapping.get(f)) for f in fields}
 
 
+def _select_relations(endpoint: EndpointSpec, include: str | None):
+    """Pick relations to embed. omit/None/* → all; empty → none; else comma names."""
+    if not endpoint.relations:
+        return []
+    if include is None:
+        return list(endpoint.relations)
+    raw = include.strip()
+    if raw in {"", "0", "false", "none"}:
+        return []
+    if raw == "*":
+        return list(endpoint.relations)
+    wanted = {p.strip() for p in raw.split(",") if p.strip()}
+    selected = [r for r in endpoint.relations if r.name in wanted]
+    unknown = sorted(wanted - {r.name for r in endpoint.relations})
+    if unknown:
+        raise AppError(
+            type_="https://contractapi.dev/problems/invalid-include",
+            title="Unknown relation",
+            status=400,
+            detail="One or more include/expand names are not configured on this endpoint.",
+            extensions={
+                "allowed": [r.name for r in endpoint.relations],
+                "rejected": unknown,
+            },
+        )
+    return selected
+
+
 def _project_fields(item: dict[str, Any], fields: list[str], relation_names: list[str]) -> dict[str, Any]:
     out = {k: item[k] for k in fields if k in item}
     for name in relation_names:
@@ -648,7 +676,17 @@ def _add_list(
     default_limit = endpoint.pagination.default_limit
     allowed_sort = set(endpoint.sortable)
     rel_names = [r.name for r in endpoint.relations]
-    reserved = {"limit", "offset", "sort", "cursor", "include_total", "fields", "format"}
+    reserved = {
+        "limit",
+        "offset",
+        "sort",
+        "cursor",
+        "include_total",
+        "fields",
+        "format",
+        "include",
+        "expand",
+    }
 
     async def list_items(
         request: Request,
@@ -657,6 +695,14 @@ def _add_list(
         cursor: str | None = Query(default=None),
         sort: str | None = Query(default=None),
         include_total: bool = Query(default=False),
+        include: str | None = Query(
+            default=None,
+            description="Comma-separated relation names to embed (* or omit = all).",
+        ),
+        expand: str | None = Query(
+            default=None,
+            description="Alias of include.",
+        ),
     ) -> Any:
         fields = _visible_fields(spec, endpoint, request)
         if not endpoint.pagination.enabled:
@@ -760,9 +806,10 @@ def _add_list(
                 ) from exc
             items = [_row_to_dict(r, endpoint.fields) for r in rows]
 
-        if endpoint.relations and items:
+        active_relations = _select_relations(endpoint, include or expand)
+        if active_relations and items:
             try:
-                load_relations(engine, metadata, endpoint.relations, items)
+                load_relations(engine, metadata, active_relations, items)
             except Exception as exc:
                 raise AppError(
                     type_="https://contractapi.dev/problems/relation-error",
@@ -771,7 +818,9 @@ def _add_list(
                     detail=str(exc),
                 ) from exc
 
-        projected = [_project_fields(i, fields, rel_names) for i in items]
+        projected = [
+            _project_fields(i, fields, [r.name for r in active_relations]) for i in items
+        ]
         payload: dict[str, Any] = {
             "items": projected,
             "limit": limit,
