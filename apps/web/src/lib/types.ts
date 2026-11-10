@@ -88,6 +88,19 @@ export const WEBHOOK_EVENTS = ["create", "update", "delete", "bulk_create"] as c
 
 export const VALIDATION_FORMATS = ["email", "uuid", "uri"] as const;
 
+export type AggregateMetricDraft = {
+  name: string;
+  op: "count" | "sum" | "avg" | "min" | "max";
+  field?: string | null;
+};
+
+export type AggregateDraft = {
+  table: string;
+  schema?: string;
+  group_by: string[];
+  metrics: AggregateMetricDraft[];
+};
+
 export type EndpointDraft = {
   name: string;
   path: string;
@@ -95,6 +108,7 @@ export type EndpointDraft = {
   schema: string;
   sql?: string | null;
   sql_params?: SqlParam[];
+  aggregate?: AggregateDraft | null;
   methods: string[];
   primary_key: string;
   fields: string[];

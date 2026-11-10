@@ -99,6 +99,7 @@ contractapi serve backend/examples/sql_metrics.yaml --data-only
 | [backend/examples/sql_metrics.yaml](backend/examples/sql_metrics.yaml) | SQL metrics + CSV/NDJSON/Parquet |
 | [backend/examples/webhooks.yaml](backend/examples/webhooks.yaml) | Write webhooks with HMAC |
 | [backend/examples/duckdb_local.yaml](backend/examples/duckdb_local.yaml) | DuckDB warehouse driver (GA) |
+| [backend/examples/aggregate_orders.yaml](backend/examples/aggregate_orders.yaml) | Aggregation DSL (GROUP BY metrics) |
 | [backend/examples/oidc_studio.env.example](backend/examples/oidc_studio.env.example) | Studio OIDC + Redis job queue env |
 
 ## What you get

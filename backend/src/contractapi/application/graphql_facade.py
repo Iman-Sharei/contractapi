@@ -28,9 +28,12 @@ try:
             name: str,
             limit: int = 20,
             params: JSON | None = None,
+            include_relations: bool = True,
+            roles: list[str] | None = None,
         ) -> list[JSON]:
             endpoints: dict[str, EndpointSpec] = info.context["endpoints"]
             engine: Engine = info.context["engine"]
+            spec: ApiSpec = info.context["spec"]
             ep = endpoints.get(name)
             if ep is None:
                 raise ValueError(
@@ -38,7 +41,12 @@ try:
                     f"Allowed: {sorted(endpoints)}"
                 )
             bind = params if isinstance(params, dict) else {}
-            return _fetch_rows(engine, ep, limit, bind_params=bind)
+            rows = _fetch_rows(engine, ep, limit, bind_params=bind)
+            if include_relations and (not ep.is_sql) and ep.relations:
+                from contractapi.application.relations import load_relations
+
+                load_relations(engine, MetaData(), ep.relations, rows)
+            return _apply_rbac(spec, ep, rows, roles or [])
 
         @strawberry.field
         def available_endpoints(self, info: Info) -> list[str]:
@@ -157,6 +165,20 @@ def _fetch_rows(
         with engine.connect() as conn:
             rows = conn.execute(sql, {"limit": limit}).mappings().all()
         return [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows]
+
+
+def _apply_rbac(
+    spec: ApiSpec,
+    ep: EndpointSpec,
+    rows: list[dict[str, Any]],
+    roles: list[str],
+) -> list[dict[str, Any]]:
+    """Match REST `_visible_fields` when app.rbac is configured."""
+    allowed = spec.rbac_fields_for(ep.name, roles)
+    if allowed is None:
+        return rows
+    keep = set(allowed) | {ep.primary_key} | {r.name for r in ep.relations}
+    return [{k: v for k, v in row.items() if k in keep} for row in rows]
 
 
 def _writable_keys(ep: EndpointSpec) -> set[str]:

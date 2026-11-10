@@ -12,19 +12,20 @@ No features currently require `CONTRACTAPI_EXPERIMENTAL`. The env var remains fo
 |---------|-------------|
 | Parquet list export | `pip install 'contractapi[parquet]'` + `parquet_export: true` |
 | DuckDB driver | `pip install 'contractapi[duckdb]'` + `database.driver: duckdb` |
-| GraphQL facade (table+SQL reads, table mutations) | `pip install 'contractapi[graphql]'` → `/graphql` |
+| GraphQL facade (table+SQL reads, relations, RBAC roles arg, table mutations) | `pip install 'contractapi[graphql]'` → `/graphql` |
+| Aggregation DSL (`aggregate:` GROUP BY metrics) | YAML / Studio SQL tab — compiles to read-only SQL |
 | Studio OIDC (JWKS) | `STUDIO_OIDC_ISSUER` (+ optional audience / JWKS / email allowlist) |
 | Redis job queue | `JOB_QUEUE_ENABLED=true` + `REDIS_URL` (+ `contractapi worker`) |
 | Multi-active mounts | Always on: primary `/data` + `/apis/{name}` |
 
 ## Nice-to-have later (not blocking Beta)
 
-- Aggregation DSL without raw SQL
 - Snowflake / BigQuery connectors
-- GraphQL: nested relations, row-level/RBAC parity with REST, subscriptions
+- GraphQL: row-level security parity, subscriptions
 - Git branch browser inside Studio
 - dbt model → endpoint helper
 - Full browser OIDC login cookies (IdP-hosted + Auth.js) — JWKS Bearer works today
+- Richer Aggregation DSL (HAVING, filters, window functions)
 
 ## Not in scope
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from contractapi.domain.sensitive import WRITE_METHODS, assert_fields_safe
 
+_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
 
 class HttpMethod(str, Enum):
     GET = "GET"
@@ -18,6 +21,91 @@ class HttpMethod(str, Enum):
     PUT = "PUT"
     PATCH = "PATCH"
     DELETE = "DELETE"
+
+
+class AggregateOp(str, Enum):
+    COUNT = "count"
+    SUM = "sum"
+    AVG = "avg"
+    MIN = "min"
+    MAX = "max"
+
+
+class AggregateMetric(BaseModel):
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    op: AggregateOp
+    field: str | None = None
+
+    @model_validator(mode="after")
+    def check_field(self) -> AggregateMetric:
+        if self.op != AggregateOp.COUNT and not self.field:
+            raise ValueError(f"Metric '{self.name}' ({self.op}) requires field")
+        if self.field and not _IDENT.match(self.field):
+            raise ValueError(f"Unsafe metric field: {self.field}")
+        return self
+
+
+class AggregateConfig(BaseModel):
+    """Declarative aggregation — compiled to a read-only SELECT subquery."""
+
+    table: str = Field(min_length=1)
+    schema_name: str = Field(default="public", alias="schema")
+    group_by: list[str] = Field(default_factory=list)
+    metrics: list[AggregateMetric] = Field(min_length=1)
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def check_idents(self) -> AggregateConfig:
+        if not _IDENT.match(self.table):
+            raise ValueError(f"Unsafe table name: {self.table}")
+        if self.schema_name and not _IDENT.match(self.schema_name):
+            raise ValueError(f"Unsafe schema name: {self.schema_name}")
+        for col in self.group_by:
+            if not _IDENT.match(col):
+                raise ValueError(f"Unsafe group_by column: {col}")
+        names = [m.name for m in self.metrics]
+        if len(names) != len(set(names)):
+            raise ValueError("Duplicate aggregate metric names")
+        clash = set(self.group_by) & set(names)
+        if clash:
+            raise ValueError(f"Metric names clash with group_by: {sorted(clash)}")
+        return self
+
+
+def _quote_agg_ident(name: str) -> str:
+    return f'"{name}"'
+
+
+def compile_aggregate_sql(agg: AggregateConfig) -> str:
+    select_parts: list[str] = [_quote_agg_ident(c) for c in agg.group_by]
+    for metric in agg.metrics:
+        if metric.op == AggregateOp.COUNT:
+            expr = (
+                f"COUNT({_quote_agg_ident(metric.field)})" if metric.field else "COUNT(*)"
+            )
+        elif metric.op == AggregateOp.SUM:
+            expr = f"SUM({_quote_agg_ident(metric.field)})"
+        elif metric.op == AggregateOp.AVG:
+            expr = f"AVG({_quote_agg_ident(metric.field)})"
+        elif metric.op == AggregateOp.MIN:
+            expr = f"MIN({_quote_agg_ident(metric.field)})"
+        else:
+            expr = f"MAX({_quote_agg_ident(metric.field)})"
+        select_parts.append(f"{expr} AS {_quote_agg_ident(metric.name)}")
+    table_sql = (
+        f"{_quote_agg_ident(agg.schema_name)}.{_quote_agg_ident(agg.table)}"
+        if agg.schema_name
+        else _quote_agg_ident(agg.table)
+    )
+    sql = f"SELECT {', '.join(select_parts)} FROM {table_sql}"
+    if agg.group_by:
+        sql += f" GROUP BY {', '.join(_quote_agg_ident(c) for c in agg.group_by)}"
+    return sql
+
+
+def derived_aggregate_fields(agg: AggregateConfig) -> list[str]:
+    return [*agg.group_by, *[m.name for m in agg.metrics]]
 
 
 class AuthMode(str, Enum):
@@ -173,8 +261,10 @@ class EndpointSpec(BaseModel):
         default=None,
         description="Optional SELECT used as a subquery source instead of a base table.",
     )
+    # Declarative GROUP BY metrics — compiled to sql (mutually exclusive with raw sql/writes).
+    aggregate: AggregateConfig | None = None
     methods: list[HttpMethod] = Field(default_factory=lambda: [HttpMethod.GET])
-    fields: list[str] = Field(min_length=1)
+    fields: list[str] = Field(default_factory=list)
     writable_fields: list[str] = Field(default_factory=list)
     primary_key: str = "id"
     filters: list[str] = Field(default_factory=list)
@@ -226,6 +316,10 @@ class EndpointSpec(BaseModel):
     def is_sql(self) -> bool:
         return bool(self.sql and self.sql.strip())
 
+    @property
+    def is_aggregate(self) -> bool:
+        return self.aggregate is not None
+
     @field_validator("path")
     @classmethod
     def normalize_path(cls, value: str) -> str:
@@ -249,6 +343,35 @@ class EndpointSpec(BaseModel):
 
     @model_validator(mode="after")
     def validate_contract(self) -> EndpointSpec:
+        if self.aggregate is not None:
+            # Always recompile from DSL (dump_spec may also include expanded sql).
+            fields = derived_aggregate_fields(self.aggregate)
+            object.__setattr__(self, "sql", compile_aggregate_sql(self.aggregate))
+            object.__setattr__(self, "fields", fields)
+            object.__setattr__(self, "primary_key", fields[0])
+            object.__setattr__(
+                self,
+                "sortable",
+                list(self.aggregate.group_by) or fields[:1],
+            )
+            if not self.filters:
+                object.__setattr__(self, "filters", list(self.aggregate.group_by))
+            object.__setattr__(self, "table", self.aggregate.table)
+            object.__setattr__(self, "schema_name", self.aggregate.schema_name)
+            object.__setattr__(self, "methods", [HttpMethod.GET])
+            object.__setattr__(self, "writable_fields", [])
+            object.__setattr__(self, "relations", [])
+            if self.pagination.mode.value == "cursor":
+                # Aggregates are unordered sets — prefer offset paging.
+                object.__setattr__(
+                    self,
+                    "pagination",
+                    self.pagination.model_copy(update={"mode": PaginationMode.OFFSET}),
+                )
+
+        if not self.fields:
+            raise ValueError(f"Endpoint '{self.name}': fields must not be empty")
+
         assert_fields_safe(self.fields, allow_sensitive=self.allow_sensitive)
         if self.is_sql:
             _assert_safe_select(self.sql or "", endpoint_name=self.name)
@@ -266,7 +389,9 @@ class EndpointSpec(BaseModel):
             object.__setattr__(self, "methods", [HttpMethod.GET])
             object.__setattr__(self, "writable_fields", [])
         elif not self.table:
-            raise ValueError(f"Endpoint '{self.name}': table is required unless sql is set")
+            raise ValueError(
+                f"Endpoint '{self.name}': table is required unless sql or aggregate is set"
+            )
 
         if self.primary_key not in self.fields:
             raise ValueError(

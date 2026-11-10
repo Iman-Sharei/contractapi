@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import MetaData, Table, select
+from sqlalchemy import MetaData, text
 from sqlalchemy.engine import Connection, Engine
 
 from contractapi.domain.models.spec import RelationSpec, RelationType
 
+_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
 
 def _ser(value: Any) -> Any:
-    from decimal import Decimal
     from datetime import date, datetime
+    from decimal import Decimal
     from uuid import UUID
 
     if isinstance(value, Decimal):
@@ -25,6 +28,12 @@ def _ser(value: Any) -> Any:
     return value
 
 
+def _q(name: str) -> str:
+    if not _IDENT.match(name):
+        raise ValueError(f"Unsafe identifier: {name}")
+    return f'"{name}"'
+
+
 def load_relations(
     engine: Engine,
     metadata: MetaData,
@@ -32,6 +41,7 @@ def load_relations(
     parents: list[dict[str, Any]],
 ) -> None:
     """Mutate parent dicts in-place, attaching relation payloads."""
+    del metadata  # kept for call-site compatibility
     if not relations or not parents:
         for p in parents:
             for rel in relations:
@@ -40,36 +50,36 @@ def load_relations(
 
     with engine.connect() as conn:
         for rel in relations:
-            _load_one_relation(conn, metadata, rel, parents)
+            _load_one_relation(conn, rel, parents)
 
 
 def _load_one_relation(
     conn: Connection,
-    metadata: MetaData,
     rel: RelationSpec,
     parents: list[dict[str, Any]],
 ) -> None:
-    table = Table(rel.table, metadata, schema=rel.schema_name, autoload_with=conn)
-    # Ensure FK column is selected for grouping even if not in response fields
-    select_fields = list(dict.fromkeys([*rel.fields, rel.foreign_key]))
-    missing = [f for f in select_fields if f not in table.c]
-    if missing:
-        raise ValueError(f"Relation '{rel.name}' missing columns: {', '.join(missing)}")
-
     parent_keys = [p.get(rel.local_key) for p in parents if p.get(rel.local_key) is not None]
     if not parent_keys:
         for p in parents:
             p[rel.name] = [] if rel.type == RelationType.ONE_TO_MANY else None
         return
 
-    stmt = select(*(table.c[f] for f in select_fields)).where(
-        table.c[rel.foreign_key].in_(parent_keys)
+    select_fields = list(dict.fromkeys([*rel.fields, rel.foreign_key]))
+    cols = ", ".join(_q(f) for f in select_fields)
+    schema = rel.schema_name
+    if schema and schema not in {"main", ""}:
+        table_sql = f"{_q(schema)}.{_q(rel.table)}"
+    else:
+        table_sql = _q(rel.table)
+    placeholders = ", ".join(f":k{i}" for i in range(len(parent_keys)))
+    params = {f"k{i}": v for i, v in enumerate(parent_keys)}
+    sql = text(
+        f"SELECT {cols} FROM {table_sql} WHERE {_q(rel.foreign_key)} IN ({placeholders})"
     )
-    rows = conn.execute(stmt).fetchall()
+    mappings = [dict(r) for r in conn.execute(sql, params).mappings().all()]
 
     grouped: dict[Any, list[dict[str, Any]]] = defaultdict(list)
-    for row in rows:
-        mapping = dict(row._mapping)
+    for mapping in mappings:
         key = mapping.get(rel.foreign_key)
         item = {f: _ser(mapping.get(f)) for f in rel.fields}
         bucket = grouped[key]

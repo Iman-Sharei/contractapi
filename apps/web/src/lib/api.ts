@@ -457,7 +457,18 @@ export function buildYaml(spec: ApiSpecDraft): string {
   for (const ep of spec.endpoints) {
     lines.push(`  - name: ${ep.name}`);
     lines.push(`    path: ${ep.path}`);
-    if (ep.sql) {
+    if (ep.aggregate) {
+      lines.push("    aggregate:");
+      lines.push(`      table: ${ep.aggregate.table}`);
+      lines.push(`      schema: ${ep.aggregate.schema ?? "public"}`);
+      lines.push(`      group_by: [${(ep.aggregate.group_by || []).join(", ")}]`);
+      lines.push("      metrics:");
+      for (const m of ep.aggregate.metrics || []) {
+        lines.push(`        - name: ${m.name}`);
+        lines.push(`          op: ${m.op}`);
+        if (m.field) lines.push(`          field: ${m.field}`);
+      }
+    } else if (ep.sql) {
       lines.push("    sql: |");
       for (const ln of ep.sql.split("\n")) lines.push(`      ${ln}`);
       if (ep.sql_params?.length) {

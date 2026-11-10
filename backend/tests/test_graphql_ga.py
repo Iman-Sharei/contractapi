@@ -247,3 +247,102 @@ def test_mount_graphql_noop_without_get_or_writes():
     engine = MagicMock()
     mount_graphql(app, engine, spec)
     app.include_router.assert_not_called()
+
+
+def test_graphql_relations_and_rbac():
+    if not graphql_available():
+        pytest.skip("strawberry not installed")
+    url, engine = _duck_engine()
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE customers (id INTEGER, email VARCHAR)"))
+        conn.execute(text("CREATE TABLE orders (id INTEGER, customer_id INTEGER, total DOUBLE)"))
+        conn.execute(text("INSERT INTO customers VALUES (1, 'a@b.c'), (2, 'x@y.z')"))
+        conn.execute(text("INSERT INTO orders VALUES (10, 1, 9.5), (11, 1, 1.0)"))
+
+    spec = parse_spec(
+        {
+            "database": {"url": url, "driver": "duckdb"},
+            "app": {
+                "title": "GQL",
+                "version": "0.5.0",
+                "description": "t",
+                "read_only": True,
+                "auth": "none",
+                "api_prefix": "",
+                "rbac": [
+                    {
+                        "role": "analyst",
+                        "endpoints": {"customers": ["id", "email"]},
+                    },
+                    {
+                        "role": "limited",
+                        "endpoints": {"customers": ["id"]},
+                    },
+                ],
+            },
+            "endpoints": [
+                {
+                    "name": "customers",
+                    "path": "/customers",
+                    "table": "customers",
+                    "schema": "main",
+                    "methods": ["GET"],
+                    "primary_key": "id",
+                    "fields": ["id", "email"],
+                    "filters": ["email"],
+                    "sortable": ["id"],
+                    "relations": [
+                        {
+                            "name": "orders",
+                            "table": "orders",
+                            "schema": "main",
+                            "type": "one_to_many",
+                            "local_key": "id",
+                            "foreign_key": "customer_id",
+                            "fields": ["id", "customer_id", "total"],
+                            "primary_key": "id",
+                            "max_per_parent": 50,
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    mount_graphql(app, engine, spec)
+    client = TestClient(app)
+
+    full = client.post(
+        "/graphql",
+        json={
+            "query": (
+                '{ endpoint(name: "customers", limit: 5, includeRelations: true, '
+                "roles: [\"analyst\"]) }"
+            )
+        },
+    )
+    assert full.status_code == 200, full.text
+    fbody = full.json()
+    assert not fbody.get("errors"), fbody
+    row = next(r for r in fbody["data"]["endpoint"] if r["id"] == 1)
+    assert row["email"] == "a@b.c"
+    assert isinstance(row["orders"], list)
+    assert len(row["orders"]) == 2
+
+    limited = client.post(
+        "/graphql",
+        json={
+            "query": (
+                '{ endpoint(name: "customers", limit: 5, includeRelations: true, '
+                "roles: [\"limited\"]) }"
+            )
+        },
+    )
+    assert limited.status_code == 200, limited.text
+    lbody = limited.json()
+    assert not lbody.get("errors"), lbody
+    lrow = next(r for r in lbody["data"]["endpoint"] if r["id"] == 1)
+    assert "email" not in lrow
+    assert "orders" in lrow  # relation key retained when include_relations

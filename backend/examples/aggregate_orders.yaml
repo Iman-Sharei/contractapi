@@ -1,0 +1,32 @@
+# Aggregation DSL — no raw SQL required.
+# Compiles to: SELECT status, COUNT(*) AS order_count, SUM(amount) AS revenue ...
+database:
+  url: postgresql://postgres:postgres@localhost:5433/app
+
+app:
+  title: Order Stats API
+  version: 0.5.0
+  description: Declarative aggregates over orders
+  read_only: true
+  auth: none
+  api_prefix: ""
+
+endpoints:
+  - name: order_stats
+    path: /stats/orders
+    aggregate:
+      table: orders
+      schema: public
+      group_by: [status]
+      metrics:
+        - name: order_count
+          op: count
+        - name: revenue
+          op: sum
+          field: amount
+    description: Orders grouped by status
+    pagination:
+      mode: offset
+      default_limit: 50
+      max_limit: 200
+    csv_export: true
