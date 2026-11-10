@@ -376,7 +376,7 @@ class DatabaseDriver(str, Enum):
 
 class DatabaseConfig(BaseModel):
     url: str = Field(min_length=1)
-    # postgres (default) | duckdb — warehouse/local analytics MVP
+    # postgres (default) | duckdb — warehouse/local analytics (GA; optional extra)
     driver: DatabaseDriver = DatabaseDriver.POSTGRES
 
 

@@ -3,7 +3,7 @@ import { buildYaml } from "./api";
 import type { ApiSpecDraft } from "./types";
 
 const sample: ApiSpecDraft = {
-  database: { url: "postgresql://x/y" },
+  database: { url: "postgresql://x/y", driver: "postgres" },
   app: {
     title: "T",
     version: "1.0.0",

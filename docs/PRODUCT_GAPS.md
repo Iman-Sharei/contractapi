@@ -7,14 +7,16 @@
 | Feature | Flag |
 |---------|------|
 | GraphQL facade | `graphql` |
-| DuckDB driver | `duckdb` |
 | Studio OIDC | `oidc` |
 | Redis job queue | `queue` |
 | Multi-active `/apis/{name}` | `multi_active` |
 
 Default: `all`.
 
-**GA (no experimental flag):** Parquet list export (`parquet_export` / `?format=parquet`) when `pyarrow` is installed (`pip install 'contractapi[parquet]'`).
+**GA (no experimental flag):**
+
+- Parquet list export (`parquet_export` / `?format=parquet`) — `pip install 'contractapi[parquet]'`
+- DuckDB driver (`database.driver: duckdb`) — `pip install 'contractapi[duckdb]'`
 
 ## Nice-to-have later (not blocking Beta)
 

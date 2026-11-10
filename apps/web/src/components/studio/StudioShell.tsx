@@ -22,6 +22,7 @@ import { defaultSafeColumns } from "@/lib/pickColumns";
 import { tableKey } from "@/lib/tableKey";
 import type {
   ApiSpecDraft,
+  DatabaseDriver,
   EndpointDraft,
   FieldValidation,
   RelationDraft,
@@ -41,8 +42,11 @@ const emptyJwt = () => ({
   refresh_ttl_days: 7,
 });
 
-const emptySpec = (url: string): ApiSpecDraft => ({
-  database: { url },
+const PG_DEFAULT_URL = "postgresql://postgres:postgres@db:5432/app";
+const DUCKDB_DEFAULT_URL = "duckdb:///:memory:";
+
+const emptySpec = (url: string, driver: DatabaseDriver = "postgres"): ApiSpecDraft => ({
+  database: { url, driver },
   app: {
     title: "My Data API",
     version: "0.5.0",
@@ -76,11 +80,12 @@ export function StudioShell({
   initialName?: string;
   embedded?: boolean;
 }) {
-  const [dbUrl, setDbUrl] = useState("postgresql://postgres:postgres@db:5432/app");
+  const [dbUrl, setDbUrl] = useState(PG_DEFAULT_URL);
+  const [dbDriver, setDbDriver] = useState<DatabaseDriver>("postgres");
   const [schema, setSchema] = useState("public");
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [spec, setSpec] = useState<ApiSpecDraft>(() => emptySpec(dbUrl));
+  const [spec, setSpec] = useState<ApiSpecDraft>(() => emptySpec(PG_DEFAULT_URL));
   const [activeEndpoint, setActiveEndpoint] = useState<string | null>(null);
   const [specName, setSpecName] = useState(initialName ?? "demo");
   const [savedNames, setSavedNames] = useState<string[]>([]);
@@ -112,8 +117,8 @@ export function StudioShell({
   const selected = tables.find((t) => tableKey(t) === selectedTable) ?? null;
   const endpoint = spec.endpoints.find((e) => e.name === activeEndpoint) ?? null;
   const draftSpec = useMemo(
-    () => ({ ...spec, database: { url: dbUrl } }),
-    [spec, dbUrl],
+    () => ({ ...spec, database: { url: dbUrl, driver: dbDriver } }),
+    [spec, dbUrl, dbDriver],
   );
   const localYaml = useMemo(() => buildYaml(draftSpec), [draftSpec]);
   const snippets = useMemo(
@@ -261,17 +266,55 @@ export function StudioShell({
 
   function onIntrospect() {
     setStatus(null);
+    if (dbDriver === "duckdb") {
+      setSpec((prev) => ({ ...prev, database: { url: dbUrl, driver: "duckdb" } }));
+      setStatus(
+        "DuckDB: table introspect is Postgres-only. Add a SQL endpoint and Discover columns, or activate a file-backed warehouse.",
+      );
+      return;
+    }
     startTransition(async () => {
       try {
         const result = await introspectDatabase(dbUrl, schema);
         setTables(result.tables);
         if (result.tables[0]) setSelectedTable(tableKey(result.tables[0]));
-        setSpec((prev) => ({ ...prev, database: { url: dbUrl } }));
+        setSpec((prev) => ({ ...prev, database: { url: dbUrl, driver: "postgres" } }));
         setStatus(`Loaded ${result.count} tables/views from schema '${schema}'.`);
       } catch (e) {
         setStatus(null, e instanceof Error ? e.message : "Introspection failed");
       }
     });
+  }
+
+  function onDriverChange(next: DatabaseDriver) {
+    setDbDriver(next);
+    if (next === "duckdb") {
+      if (dbUrl.startsWith("postgresql") || dbUrl.startsWith("postgres")) {
+        setDbUrl(DUCKDB_DEFAULT_URL);
+      }
+      setTables([]);
+      setSelectedTable(null);
+    } else if (dbUrl.startsWith("duckdb") || dbUrl === ":memory:" || dbUrl === DUCKDB_DEFAULT_URL) {
+      setDbUrl(PG_DEFAULT_URL);
+    }
+    setSpec((prev) => ({
+      ...prev,
+      database: {
+        url:
+          next === "duckdb"
+            ? dbUrl.startsWith("postgresql") || dbUrl.startsWith("postgres")
+              ? DUCKDB_DEFAULT_URL
+              : dbUrl
+            : dbUrl.startsWith("duckdb") || dbUrl === ":memory:"
+              ? PG_DEFAULT_URL
+              : dbUrl,
+        driver: next,
+      },
+      app: {
+        ...prev.app,
+        read_only: next === "duckdb" ? true : prev.app.read_only,
+      },
+    }));
   }
 
   function addEndpointFromTable(table: TableInfo) {
@@ -608,11 +651,18 @@ export function StudioShell({
         skipDirty.current = true;
         setSpec(loaded.spec);
         setDbUrl(loaded.spec.database.url);
+        const drv = loaded.spec.database.driver === "duckdb" ? "duckdb" : "postgres";
+        setDbDriver(drv);
         setSpecName(name);
         setActiveEndpoint(loaded.spec.endpoints[0]?.name ?? null);
         setDirty(false);
         setStatus(`Loaded spec '${name}'.`);
         const schemaHint = loaded.spec.endpoints[0]?.schema || "public";
+        if (drv === "duckdb") {
+          setTables([]);
+          setMessage(`Loaded DuckDB spec '${name}' — use SQL endpoints / Discover columns.`);
+          return;
+        }
         try {
           const intro = await introspectDatabase(loaded.spec.database.url, schemaHint);
           setTables(intro.tables);
@@ -646,7 +696,7 @@ export function StudioShell({
     const sql = endpoint.sql || sqlDraft;
     startTransition(async () => {
       try {
-        const result = await previewSql(dbUrl, sql);
+        const result = await previewSql(dbUrl, sql, dbDriver);
         const fields = result.columns;
         const pk = fields.includes("id") ? "id" : fields[0];
         updateEndpoint({
@@ -769,8 +819,20 @@ export function StudioShell({
           </div>
         </div>
         <div className={styles.fieldGrid}>
-          <label className={styles.span3}>
-            <span className={styles.fieldLabel}>Postgres URL</span>
+          <label>
+            <span className={styles.fieldLabel}>Driver</span>
+            <select
+              value={dbDriver}
+              onChange={(e) => onDriverChange(e.target.value as DatabaseDriver)}
+            >
+              <option value="postgres">Postgres</option>
+              <option value="duckdb">DuckDB</option>
+            </select>
+          </label>
+          <label className={styles.span2}>
+            <span className={styles.fieldLabel}>
+              {dbDriver === "duckdb" ? "DuckDB URL" : "Postgres URL"}
+            </span>
             <div className={styles.inputWithBtn}>
               <input
                 type={showDbUrl ? "text" : "password"}
@@ -778,6 +840,9 @@ export function StudioShell({
                 onChange={(e) => setDbUrl(e.target.value)}
                 spellCheck={false}
                 autoComplete="off"
+                placeholder={
+                  dbDriver === "duckdb" ? "duckdb:///:memory: or duckdb:///./file.duckdb" : undefined
+                }
               />
               <button
                 type="button"
@@ -791,7 +856,11 @@ export function StudioShell({
           </label>
           <label>
             <span className={styles.fieldLabel}>Schema</span>
-            <input value={schema} onChange={(e) => setSchema(e.target.value)} />
+            <input
+              value={schema}
+              onChange={(e) => setSchema(e.target.value)}
+              disabled={dbDriver === "duckdb"}
+            />
           </label>
           <label>
             <span className={styles.fieldLabel}>Spec name</span>
@@ -818,6 +887,13 @@ export function StudioShell({
             />
           </label>
         </div>
+        {dbDriver === "duckdb" && (
+          <p className={styles.hint}>
+            DuckDB is GA for SQL / file warehouses (<code>pip install &apos;contractapi[duckdb]&apos;</code>
+            ). Prefer <strong>Add SQL endpoint</strong> → Discover columns → Activate. Table introspect
+            stays Postgres-only.
+          </p>
+        )}
       </section>
 
       <section className={styles.settingsCard}>

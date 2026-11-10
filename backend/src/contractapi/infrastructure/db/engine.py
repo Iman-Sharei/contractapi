@@ -79,12 +79,6 @@ def create_duckdb_engine(url: str) -> Engine:
 
 def create_engine_for_config(config: DatabaseConfig, *, pooled: bool = True) -> Engine:
     if config.driver == DatabaseDriver.DUCKDB:
-        from contractapi.core.config import get_settings
-
-        if not get_settings().experimental_enabled("duckdb"):
-            raise RuntimeError(
-                "DuckDB driver is experimental — set CONTRACTAPI_EXPERIMENTAL=duckdb (or all)"
-            )
         return create_duckdb_engine(config.url)
     return create_pg_engine(config.url, pooled=pooled)
 

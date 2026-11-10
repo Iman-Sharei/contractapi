@@ -1,17 +1,18 @@
-# DuckDB warehouse MVP — local analytics file / memory.
+# DuckDB warehouse (GA) — local analytics file / memory.
 # Requires: pip install 'contractapi[duckdb]'
 # Point url at a .duckdb file or :memory: with views over Parquet.
+# No CONTRACTAPI_EXPERIMENTAL flag needed.
 database:
   url: duckdb:///:memory:
   driver: duckdb
 
 app:
   title: DuckDB Local Warehouse
-  version: 0.4.0
+  version: 0.5.0
   description: Read-oriented warehouse adapter (SQL endpoints recommended).
   read_only: true
   auth: none
-  api_prefix: /v1
+  api_prefix: ""
 
 endpoints:
   # Prefer sql endpoints with DuckDB — create views in your .duckdb file first.

@@ -195,10 +195,14 @@ export async function issueToken(
   });
 }
 
-export async function previewSql(databaseUrl: string, sql: string) {
+export async function previewSql(
+  databaseUrl: string,
+  sql: string,
+  driver: "postgres" | "duckdb" = "postgres",
+) {
   return studioFetch<{ columns: string[]; count: number }>("/sql-preview", {
     method: "POST",
-    body: JSON.stringify({ database_url: databaseUrl, sql }),
+    body: JSON.stringify({ database_url: databaseUrl, sql, driver }),
   });
 }
 

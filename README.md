@@ -98,7 +98,7 @@ contractapi serve backend/examples/sql_metrics.yaml --data-only
 | [backend/examples/jwt_write.yaml](backend/examples/jwt_write.yaml) | JWT roles, writes, validations, bulk |
 | [backend/examples/sql_metrics.yaml](backend/examples/sql_metrics.yaml) | SQL metrics + CSV/NDJSON/Parquet |
 | [backend/examples/webhooks.yaml](backend/examples/webhooks.yaml) | Write webhooks with HMAC |
-| [backend/examples/duckdb_local.yaml](backend/examples/duckdb_local.yaml) | DuckDB warehouse driver MVP |
+| [backend/examples/duckdb_local.yaml](backend/examples/duckdb_local.yaml) | DuckDB warehouse driver (GA) |
 | [backend/examples/oidc_studio.env.example](backend/examples/oidc_studio.env.example) | Studio OIDC + Redis job queue env |
 
 ## What you get
@@ -112,7 +112,7 @@ contractapi serve backend/examples/sql_metrics.yaml --data-only
 
 ## Limits (honest)
 
-- Beta — experimental flags for GraphQL / DuckDB / Parquet / OIDC / queue / multi-active  
+- Beta — experimental flags for GraphQL / OIDC / queue / multi-active (Parquet + DuckDB are GA)  
 - Warehouse beyond **Postgres + DuckDB** (Snowflake/BQ) still future  
 - Multi-active ≠ multi-org SaaS control plane  
 

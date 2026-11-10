@@ -125,8 +125,10 @@ export type EndpointDraft = {
   parquet_export?: boolean;
 };
 
+export type DatabaseDriver = "postgres" | "duckdb";
+
 export type ApiSpecDraft = {
-  database: { url: string };
+  database: { url: string; driver?: DatabaseDriver };
   app: {
     title: string;
     version: string;

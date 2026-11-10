@@ -83,7 +83,7 @@ export default function NewApiWizardPage() {
       });
     }
     return {
-      database: { url: dbUrl },
+      database: { url: dbUrl, driver: "postgres" },
       app: {
         title,
         version: "0.5.0",
@@ -251,7 +251,10 @@ export default function NewApiWizardPage() {
       {step === 0 && (
         <section className={styles.panel}>
           <h2>Connect Postgres</h2>
-          <p>Studio only introspects what you point at. Nothing is exposed yet.</p>
+          <p>
+            Studio only introspects what you point at. Nothing is exposed yet. For DuckDB warehouses,
+            finish this wizard or open the editor and switch Driver → DuckDB.
+          </p>
           <div className={styles.formGrid}>
             <label className={styles.span2}>
               Database URL

@@ -56,6 +56,7 @@ class IssueTokenRequest(BaseModel):
 class SqlPreviewRequest(BaseModel):
     database_url: str = Field(min_length=1)
     sql: str = Field(min_length=1)
+    driver: str = Field(default="postgres", description="postgres | duckdb")
 
 
 class DumpYamlRequest(BaseModel):

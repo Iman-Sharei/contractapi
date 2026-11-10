@@ -14,6 +14,7 @@ All notable changes to this project are documented here.
 
 ### Runtime
 - **Parquet export is GA** — no `CONTRACTAPI_EXPERIMENTAL=parquet` gate; still needs `pyarrow`
+- **DuckDB driver is GA** — no experimental gate; Studio Driver selector + SQL preview; still needs `duckdb` extra
 
 ### Quality
 - Backend e2e: activate with empty prefix → `GET /data/customers`

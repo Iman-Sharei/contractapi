@@ -247,10 +247,18 @@ def studio_issue_token(body: IssueTokenRequest) -> dict[str, str]:
 def studio_sql_preview(body: SqlPreviewRequest) -> dict[str, Any]:
     """Discover output columns for a custom SELECT (Studio SQL endpoints)."""
     from contractapi.application.sql_endpoint import preview_sql_columns
-    from contractapi.infrastructure.db.engine import create_pg_engine
+    from contractapi.domain.models.spec import DatabaseConfig, DatabaseDriver
+    from contractapi.infrastructure.db.engine import create_engine_for_config
 
     try:
-        engine = create_pg_engine(body.database_url, pooled=False)
+        try:
+            drv = DatabaseDriver(body.driver)
+        except ValueError:
+            drv = DatabaseDriver.POSTGRES
+        engine = create_engine_for_config(
+            DatabaseConfig(url=body.database_url, driver=drv),
+            pooled=False,
+        )
         columns = preview_sql_columns(engine, body.sql)
     except Exception as exc:
         raise AppError(
