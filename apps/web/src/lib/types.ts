@@ -175,6 +175,7 @@ export type SpecListItem = {
 export type ActiveInfo = {
   active: boolean;
   name?: string | null;
+  apis?: string[];
   summary?: {
     title: string;
     version: string;
@@ -184,6 +185,27 @@ export type ActiveInfo = {
     read_only: boolean;
     endpoints: { name: string; path: string; methods: string[] }[];
   } | null;
+};
+
+export type ActiveApiMount = {
+  name: string;
+  primary: boolean;
+  title: string;
+  version: string;
+  endpoint_count: number;
+  mount: string;
+  primary_mount?: string | null;
+};
+
+export type StudioHealth = {
+  status: string;
+  plane?: string;
+  oidc?: boolean;
+  job_queue?: boolean;
+  multi_active?: boolean;
+  graphql?: boolean;
+  active_apis?: number;
+  experimental?: string[];
 };
 
 export type OpenApiDiff = {

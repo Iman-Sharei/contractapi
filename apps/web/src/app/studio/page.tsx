@@ -3,21 +3,25 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import {
+  activateNamedSpec,
   activateSpec,
   deactivateSpec,
   deleteSpec,
   getActive,
   getApiBase,
+  listActiveApis,
   listSpecs,
   loadSpec,
   studioHealth,
 } from "@/lib/api";
-import type { ActiveInfo, SpecListItem } from "@/lib/types";
+import type { ActiveApiMount, ActiveInfo, SpecListItem, StudioHealth } from "@/lib/types";
 import styles from "@/components/studio/flow.module.css";
 
 export default function StudioCatalogPage() {
   const [specs, setSpecs] = useState<SpecListItem[]>([]);
   const [active, setActive] = useState<ActiveInfo | null>(null);
+  const [mounts, setMounts] = useState<ActiveApiMount[]>([]);
+  const [health, setHealth] = useState<StudioHealth | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,14 +33,17 @@ export default function StudioCatalogPage() {
     startTransition(async () => {
       setLoading(true);
       try {
-        const [listed, act, health] = await Promise.all([
+        const [listed, act, healthRes, activeList] = await Promise.all([
           listSpecs(),
           getActive(),
           studioHealth().catch(() => null),
+          listActiveApis().catch(() => ({ count: 0, apis: [] as ActiveApiMount[] })),
         ]);
         setSpecs(listed.specs);
         setActive(act);
-        setBackendOk(health?.status === "ok");
+        setMounts(activeList.apis);
+        setHealth(healthRes);
+        setBackendOk(healthRes?.status === "ok");
         setError(null);
       } catch (e) {
         setBackendOk(false);
@@ -69,13 +76,20 @@ export default function StudioCatalogPage() {
     setError(null);
   }
 
-  function onActivate(name: string) {
+  function onActivate(name: string, primary = true) {
     clearBanners();
     startTransition(async () => {
       try {
         const loaded = await loadSpec(name);
-        await activateSpec(loaded.spec, name);
-        setMessage(`Activated '${name}' → ${getApiBase()}/data/docs`);
+        if (primary) {
+          await activateSpec(loaded.spec, name);
+          setMessage(
+            `Activated '${name}' as primary → ${getApiBase()}/data/docs (also /apis/${name})`,
+          );
+        } else {
+          await activateNamedSpec(loaded.spec, name, false);
+          setMessage(`Mounted '${name}' → ${getApiBase()}/apis/${name}`);
+        }
         setError(null);
         refresh();
       } catch (e) {
@@ -85,12 +99,12 @@ export default function StudioCatalogPage() {
     });
   }
 
-  function onDeactivate() {
+  function onDeactivate(name?: string) {
     clearBanners();
     startTransition(async () => {
       try {
-        await deactivateSpec();
-        setMessage("Data API deactivated.");
+        await deactivateSpec(name);
+        setMessage(name ? `Deactivated '${name}'.` : "All data APIs deactivated.");
         setError(null);
         refresh();
       } catch (e) {
@@ -122,8 +136,9 @@ export default function StudioCatalogPage() {
         <p className={styles.kicker}>Studio</p>
         <h1 className={styles.title}>My APIs</h1>
         <p className={styles.lede}>
-          Saved contracts on disk, one active data-plane under <code>/data</code>. Design, activate,
-          compare, or remove — without mirroring your whole schema.
+          Saved contracts on disk. Primary data-plane under <code>/data</code>; additional mounts under{" "}
+          <code>/apis/{"{name}"}</code>. Design, activate, compare, or remove — without mirroring your
+          whole schema.
         </p>
         <div className={styles.toolbar}>
           <Link className={styles.primary} href="/studio/new">
@@ -136,8 +151,13 @@ export default function StudioCatalogPage() {
             Refresh
           </button>
           {active?.active && (
-            <button type="button" className={styles.danger} onClick={onDeactivate} disabled={pending}>
-              Deactivate live
+            <button
+              type="button"
+              className={styles.danger}
+              onClick={() => onDeactivate()}
+              disabled={pending}
+            >
+              Deactivate all
             </button>
           )}
           {backendOk !== null && (
@@ -148,6 +168,9 @@ export default function StudioCatalogPage() {
               {backendOk ? "backend ok" : "backend down"}
             </span>
           )}
+          {health?.oidc ? <span className={styles.badgeLive}>OIDC</span> : null}
+          {health?.job_queue ? <span className={styles.badgeLive}>queue</span> : null}
+          {health?.multi_active ? <span className={styles.badge}>multi-active</span> : null}
         </div>
       </section>
 
@@ -168,25 +191,67 @@ export default function StudioCatalogPage() {
         </div>
       )}
 
-      {active?.active && active.summary && (
+      {mounts.length > 0 && (
         <section className={styles.panel} style={{ marginBottom: 18 }}>
-          <h2>Live now</h2>
-          <p>
-            {active.name ? (
-              <>
-                Spec <strong>{active.name}</strong> ·{" "}
-              </>
-            ) : null}
-            {active.summary.title} v{active.summary.version} · {active.summary.endpoint_count}{" "}
-            endpoints · auth={active.summary.auth} · prefix={active.summary.api_prefix}
-          </p>
-          <div className={styles.chipRow}>
-            {active.summary.endpoints.map((ep) => (
-              <span key={ep.name} className={styles.chipOn}>
-                {ep.methods.join("|")} {ep.path}
-              </span>
+          <h2>Live mounts</h2>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {mounts.map((m) => (
+              <li
+                key={m.name}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 10,
+                  alignItems: "center",
+                  padding: "0.55rem 0",
+                  borderBottom: "1px solid var(--line-soft, #e5e7eb)",
+                }}
+              >
+                <strong>{m.name}</strong>
+                <span className={m.primary ? styles.badgeLive : styles.badge}>
+                  {m.primary ? "primary /data" : "named"}
+                </span>
+                <span>
+                  {m.title} v{m.version} · {m.endpoint_count} endpoints
+                </span>
+                <a
+                  className={styles.ghost}
+                  href={`${getApiBase()}${m.mount}/docs`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {m.mount}/docs
+                </a>
+                {m.primary_mount && (
+                  <a
+                    className={styles.ghost}
+                    href={`${getApiBase()}${m.primary_mount}/docs`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    /data/docs
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className={styles.danger}
+                  onClick={() => onDeactivate(m.name)}
+                  disabled={pending}
+                >
+                  Unmount
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
+          {active?.summary && (
+            <div className={styles.chipRow} style={{ marginTop: 12 }}>
+              {active.summary.endpoints.map((ep) => (
+                <span key={ep.name} className={styles.chipOn}>
+                  {ep.methods.join("|")} {ep.path}
+                </span>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -253,10 +318,19 @@ export default function StudioCatalogPage() {
                   <button
                     type="button"
                     className={styles.primary}
-                    onClick={() => onActivate(s.name)}
+                    onClick={() => onActivate(s.name, true)}
                     disabled={pending}
                   >
-                    Activate
+                    Activate primary
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.secondary}
+                    onClick={() => onActivate(s.name, false)}
+                    disabled={pending}
+                    title="Mount under /apis/{name} without replacing /data"
+                  >
+                    Mount /apis
                   </button>
                   <button
                     type="button"

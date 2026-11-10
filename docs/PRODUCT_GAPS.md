@@ -2,21 +2,20 @@
 
 **Maturity:** Beta `0.5.0` — see [STABILITY.md](STABILITY.md).
 
-## Experimental (enabled via `CONTRACTAPI_EXPERIMENTAL` / `DATAAPI_EXPERIMENTAL`)
+## Experimental
 
-| Feature | Flag |
-|---------|------|
-| Studio OIDC | `oidc` |
-| Redis job queue | `queue` |
-| Multi-active `/apis/{name}` | `multi_active` |
+No features currently require `CONTRACTAPI_EXPERIMENTAL`. The env var remains for future opt-ins; `all` / legacy tokens are ignored.
 
-Default: `all`.
+## GA (config / optional extras only)
 
-**GA (no experimental flag):**
-
-- Parquet list export (`parquet_export` / `?format=parquet`) — `pip install 'contractapi[parquet]'`
-- DuckDB driver (`database.driver: duckdb`) — `pip install 'contractapi[duckdb]'`
-- GraphQL read facade (`/graphql` on the data plane) — `pip install 'contractapi[graphql]'`
+| Feature | Enable with |
+|---------|-------------|
+| Parquet list export | `pip install 'contractapi[parquet]'` + `parquet_export: true` |
+| DuckDB driver | `pip install 'contractapi[duckdb]'` + `database.driver: duckdb` |
+| GraphQL read facade | `pip install 'contractapi[graphql]'` → `/graphql` |
+| Studio OIDC (JWKS) | `STUDIO_OIDC_ISSUER` (+ optional audience / JWKS / email allowlist) |
+| Redis job queue | `JOB_QUEUE_ENABLED=true` + `REDIS_URL` (+ `contractapi worker`) |
+| Multi-active mounts | Always on: primary `/data` + `/apis/{name}` |
 
 ## Nice-to-have later (not blocking Beta)
 

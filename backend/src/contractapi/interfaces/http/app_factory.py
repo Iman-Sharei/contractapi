@@ -179,7 +179,8 @@ def create_studio_app() -> FastAPI:
     settings = get_settings()
     setup_logging(debug=settings.debug)
     _restore_runtime()
-    if settings.job_queue_enabled and settings.experimental_enabled("queue"):
+    # Job queue is GA when JOB_QUEUE_ENABLED + REDIS_URL (optional Redis worker).
+    if settings.job_queue_enabled and settings.redis_url:
         start_inline_worker()
 
     app = FastAPI(
@@ -215,8 +216,8 @@ def create_studio_app() -> FastAPI:
 
     app.include_router(studio_router)
     app.mount("/data", DataPlaneASGI())
-    if settings.experimental_enabled("multi_active"):
-        app.mount("/apis", MultiApiASGI())
+    # Multi-active named mounts are GA.
+    app.mount("/apis", MultiApiASGI())
 
     @app.get("/health")
     def root_health() -> dict[str, Any]:
@@ -229,12 +230,9 @@ def create_studio_app() -> FastAPI:
             "service": settings.app_name,
             "version": "0.5.0",
             "maturity": "beta",
-            "oidc": oidc_enabled(settings) and settings.experimental_enabled("oidc"),
-            "job_queue": bool(
-                settings.job_queue_enabled
-                and settings.redis_url
-                and settings.experimental_enabled("queue")
-            ),
+            "oidc": oidc_enabled(settings),
+            "job_queue": bool(settings.job_queue_enabled and settings.redis_url),
+            "multi_active": True,
             "graphql": graphql_available(),
             "experimental": sorted(settings.experimental_set),
             "active_apis": len(spec_store.all()),

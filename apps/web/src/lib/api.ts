@@ -1,9 +1,11 @@
 import { formatApiError } from "./formatError";
 import type {
+  ActiveApiMount,
   ActiveInfo,
   ApiSpecDraft,
   OpenApiDiff,
   SpecListItem,
+  StudioHealth,
   TableInfo,
   ValidateResult,
 } from "./types";
@@ -101,7 +103,7 @@ export function getDataApiKey() {
 }
 
 export async function studioHealth() {
-  return studioFetch<{ status: string; plane?: string }>("/health");
+  return studioFetch<StudioHealth>("/health");
 }
 
 export async function introspectDatabase(databaseUrl: string, schema = "public") {
@@ -125,6 +127,22 @@ export async function activateSpec(spec: ApiSpecDraft, name?: string) {
   });
 }
 
+/** Activate under /apis/{name} without replacing /data (unless primary=true). */
+export async function activateNamedSpec(
+  spec: ApiSpecDraft,
+  name: string,
+  primary = false,
+) {
+  const q = primary ? "?primary=true" : "";
+  return studioFetch<{ message: string; docs_path: string }>(
+    `/activate/${encodeURIComponent(name)}${q}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ spec, check_db: true, name }),
+    },
+  );
+}
+
 export async function deactivateSpec(name?: string) {
   const q = name ? `?name=${encodeURIComponent(name)}` : "";
   return studioFetch<{ active: boolean; message: string }>(`/deactivate${q}`, {
@@ -135,6 +153,10 @@ export async function deactivateSpec(name?: string) {
 
 export async function getActive() {
   return studioFetch<ActiveInfo>("/active");
+}
+
+export async function listActiveApis() {
+  return studioFetch<{ count: number; apis: ActiveApiMount[] }>("/active/list");
 }
 
 export async function deleteSpec(name: string) {

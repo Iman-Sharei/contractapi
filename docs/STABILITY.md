@@ -11,20 +11,19 @@
 | CLI: `init`, `validate`, `serve`, `diff`, `doctor`, `version`, `worker` | **Stable** command names |
 | Studio control-plane `/studio/*` | **Stable enough** for Studio UI; breaking changes announced in CHANGELOG |
 
-## Experimental (may change without SemVer major until 1.0)
+## GA (optional config / extras; no experimental gate)
 
-Marked in OpenAPI / logs / docs as experimental:
-
-- OIDC Studio login
+- Parquet list export (`pyarrow`)
+- DuckDB driver
+- GraphQL read facade (`strawberry`) — mutations / SQL-endpoint GraphQL still later
+- Studio OIDC JWKS (`STUDIO_OIDC_ISSUER`) — API key remains break-glass
 - Redis horizontal job queue + `contractapi worker`
-- Multi-active `/apis/{name}` beyond single primary `/data`
-
-**GA:** Parquet export, DuckDB driver, GraphQL read facade (optional extras; no experimental gate). Mutations / SQL-endpoint GraphQL still later.
+- Multi-active `/apis/{name}` alongside primary `/data`
 
 ## Versioning rules
 
 1. **0.5.x Beta** — bugfixes + additive features; rare breaking YAML changes only with `UPGRADING.md` note.
-2. **1.0.0** — after ≥1 real external deploy cycle and deprecation of experimental→stable.
+2. **1.0.0** — after ≥1 real external deploy cycle.
 3. Pre-releases use PEP 440: `0.5.0b1`, `0.5.0rc1`.
 
 ## Deprecation policy

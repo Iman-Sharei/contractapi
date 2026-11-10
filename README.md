@@ -112,7 +112,7 @@ contractapi serve backend/examples/sql_metrics.yaml --data-only
 
 ## Limits (honest)
 
-- Beta — experimental flags for OIDC / queue / multi-active (Parquet + DuckDB + GraphQL are GA)  
+- Beta — OIDC / queue / multi-active / Parquet / DuckDB / GraphQL are GA (config or optional extras)  
 - Warehouse beyond **Postgres + DuckDB** (Snowflake/BQ) still future  
 - Multi-active ≠ multi-org SaaS control plane  
 

@@ -20,8 +20,9 @@ _discovery_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def oidc_enabled(settings: Settings | None = None) -> bool:
+    """GA: enabled whenever STUDIO_OIDC_ISSUER is set (no experimental gate)."""
     s = settings or get_settings()
-    return bool(s.studio_oidc_issuer.strip()) and s.experimental_enabled("oidc")
+    return bool(s.studio_oidc_issuer.strip())
 
 
 def _discover(issuer: str) -> dict[str, Any]:

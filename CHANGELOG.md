@@ -16,6 +16,8 @@ All notable changes to this project are documented here.
 - **Parquet export is GA** — no `CONTRACTAPI_EXPERIMENTAL=parquet` gate; still needs `pyarrow`
 - **DuckDB driver is GA** — no experimental gate; Studio Driver selector + SQL preview; still needs `duckdb` extra
 - **GraphQL read facade is GA** — mounts `/graphql` when `strawberry` is installed; no experimental gate
+- **OIDC / Redis queue / multi-active are GA** — no experimental gates; Studio catalog shows live mounts + Mount /apis
+- `CONTRACTAPI_EXPERIMENTAL` default empty (legacy `all` is a no-op)
 
 ### Quality
 - Backend e2e: activate with empty prefix → `GET /data/customers`

@@ -42,8 +42,22 @@ router = APIRouter(
 
 
 @router.get("/health")
-def studio_health() -> dict[str, str]:
-    return {"status": "ok", "plane": "studio"}
+def studio_health() -> dict[str, Any]:
+    from contractapi.application.graphql_facade import graphql_available
+    from contractapi.core.config import get_settings
+    from contractapi.infrastructure.security.oidc import oidc_enabled
+
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "plane": "studio",
+        "oidc": oidc_enabled(settings),
+        "job_queue": bool(settings.job_queue_enabled and settings.redis_url),
+        "multi_active": True,
+        "graphql": graphql_available(),
+        "active_apis": len(spec_store.all()),
+        "experimental": sorted(settings.experimental_set),
+    }
 
 
 @router.post("/introspect")

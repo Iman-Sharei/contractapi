@@ -11,12 +11,12 @@ from contractapi.domain.models.spec import DatabaseConfig, DatabaseDriver, parse
 from contractapi.infrastructure.db.engine import create_engine_for_config
 
 
-def test_experimental_set_excludes_ga_features():
+def test_experimental_set_empty_for_legacy_all():
     s = Settings(experimental="all")
-    assert "duckdb" not in s.experimental_set
-    assert "parquet" not in s.experimental_set
-    assert "graphql" not in s.experimental_set
-    assert "oidc" in s.experimental_set
+    assert s.experimental_set == set()
+    assert not s.experimental_enabled("oidc")
+    assert not s.experimental_enabled("queue")
+    assert not s.experimental_enabled("multi_active")
 
 
 def test_create_engine_duckdb_without_experimental(monkeypatch: pytest.MonkeyPatch):

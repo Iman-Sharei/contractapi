@@ -80,11 +80,11 @@ class Settings(BaseSettings):
         default="",
         description="Comma-separated emails allowed into Studio; empty = any valid token.",
     )
-    # Comma list: oidc,queue,multi_active — or "all"
-    # Parquet, DuckDB, and GraphQL are GA (optional extras; no experimental gate).
+    # Reserved for future opt-in surfaces. OIDC, queue, multi_active, Parquet,
+    # DuckDB, and GraphQL are GA (config/extras only — no experimental gate).
     experimental: str = Field(
-        default="all",
-        description="Experimental feature gate for Beta. Use empty to disable optional surfaces.",
+        default="",
+        description="Comma list of future experimental features, or empty. Legacy 'all' is a no-op.",
         validation_alias=AliasChoices("experimental", "CONTRACTAPI_EXPERIMENTAL"),
     )
     # Optional YAML path activated on boot (in addition to .runtime/active.json)
@@ -109,10 +109,9 @@ class Settings(BaseSettings):
     @property
     def experimental_set(self) -> set[str]:
         raw = self.experimental.strip().lower()
-        if not raw:
+        if not raw or raw == "all":
+            # "all" kept for backwards env compatibility; no gated features remain.
             return set()
-        if raw == "all":
-            return {"oidc", "queue", "multi_active"}
         return {p.strip() for p in raw.split(",") if p.strip()}
 
     def experimental_enabled(self, feature: str) -> bool:
