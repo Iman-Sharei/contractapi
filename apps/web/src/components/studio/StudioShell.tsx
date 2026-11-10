@@ -800,6 +800,15 @@ export function StudioShell({
           <a className={styles.linkBtn} href={`${getApiBase()}/data/docs`} target="_blank" rel="noreferrer">
             Live /data docs
           </a>
+          <a
+            className={styles.linkBtn}
+            href={`${getApiBase()}/data/graphql`}
+            target="_blank"
+            rel="noreferrer"
+            title="Requires pip install 'contractapi[graphql]' and an activated table GET endpoint"
+          >
+            GraphQL
+          </a>
         </div>
       )}
 

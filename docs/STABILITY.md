@@ -15,12 +15,11 @@
 
 Marked in OpenAPI / logs / docs as experimental:
 
-- GraphQL facade (`/graphql`)
 - OIDC Studio login
 - Redis horizontal job queue + `contractapi worker`
 - Multi-active `/apis/{name}` beyond single primary `/data`
 
-**GA:** Parquet list export (optional `pyarrow`) and DuckDB driver (optional `duckdb` extras); no experimental gate.
+**GA:** Parquet export, DuckDB driver, GraphQL read facade (optional extras; no experimental gate). Mutations / SQL-endpoint GraphQL still later.
 
 ## Versioning rules
 

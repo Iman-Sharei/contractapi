@@ -80,8 +80,8 @@ class Settings(BaseSettings):
         default="",
         description="Comma-separated emails allowed into Studio; empty = any valid token.",
     )
-    # Comma list: graphql,oidc,queue,multi_active — or "all"
-    # Parquet export and DuckDB driver are GA (optional extras; no experimental gate).
+    # Comma list: oidc,queue,multi_active — or "all"
+    # Parquet, DuckDB, and GraphQL are GA (optional extras; no experimental gate).
     experimental: str = Field(
         default="all",
         description="Experimental feature gate for Beta. Use empty to disable optional surfaces.",
@@ -112,7 +112,7 @@ class Settings(BaseSettings):
         if not raw:
             return set()
         if raw == "all":
-            return {"graphql", "oidc", "queue", "multi_active"}
+            return {"oidc", "queue", "multi_active"}
         return {p.strip() for p in raw.split(",") if p.strip()}
 
     def experimental_enabled(self, feature: str) -> bool:

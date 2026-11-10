@@ -15,7 +15,7 @@
 | `pip install 'contractapi[redis]'` | shared KV / queue |
 | `pip install 'contractapi[parquet]'` | Parquet export |
 | `pip install 'contractapi[duckdb]'` | DuckDB driver |
-| `pip install 'contractapi[graphql]'` | `/graphql` |
+| `pip install 'contractapi[graphql]'` | GraphQL read facade at `/graphql` (GA) |
 | `pip install 'contractapi[oidc]'` | cryptography for OIDC |
 | `pip install 'contractapi[all]'` | everything |
 

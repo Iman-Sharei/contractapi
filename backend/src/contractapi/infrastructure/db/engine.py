@@ -63,17 +63,29 @@ def create_duckdb_engine(url: str) -> Engine:
     except ImportError as exc:
         raise RuntimeError("Install DuckDB support with: pip install 'contractapi[duckdb]'") from exc
 
-    # Accept raw paths and duckdb:// URLs
+    # Accept raw paths and duckdb:// URLs.
+    # :memory: uses StaticPool so every checkout hits the same in-process DB.
+    from sqlalchemy.pool import StaticPool
+
+    memory = False
     if url.startswith("duckdb:///"):
-        path = url[len("duckdb:///") :]
-        sa_url = f"duckdb:///{path}"
+        path = url[len("duckdb:///") :].split("?", 1)[0]
+        if path in {":memory:", "memory", ""}:
+            sa_url = "duckdb:///:memory:"
+            memory = True
+        else:
+            sa_url = f"duckdb:///{path}"
     elif url.startswith("duckdb://"):
-        sa_url = url
+        sa_url = url.split("?", 1)[0]
+        memory = "/:memory:" in sa_url or sa_url.rstrip("/").endswith(":memory:")
     elif url in {":memory:", "memory"}:
         sa_url = "duckdb:///:memory:"
+        memory = True
     else:
         sa_url = f"duckdb:///{url}"
 
+    if memory:
+        return create_engine(sa_url, poolclass=StaticPool)
     return create_engine(sa_url)
 
 

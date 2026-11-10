@@ -6,7 +6,6 @@
 
 | Feature | Flag |
 |---------|------|
-| GraphQL facade | `graphql` |
 | Studio OIDC | `oidc` |
 | Redis job queue | `queue` |
 | Multi-active `/apis/{name}` | `multi_active` |
@@ -17,6 +16,7 @@ Default: `all`.
 
 - Parquet list export (`parquet_export` / `?format=parquet`) — `pip install 'contractapi[parquet]'`
 - DuckDB driver (`database.driver: duckdb`) — `pip install 'contractapi[duckdb]'`
+- GraphQL read facade (`/graphql` on the data plane) — `pip install 'contractapi[graphql]'`
 
 ## Nice-to-have later (not blocking Beta)
 

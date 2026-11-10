@@ -222,6 +222,8 @@ def create_studio_app() -> FastAPI:
     def root_health() -> dict[str, Any]:
         from contractapi.infrastructure.security.oidc import oidc_enabled
 
+        from contractapi.application.graphql_facade import graphql_available
+
         return {
             "status": "ok",
             "service": settings.app_name,
@@ -233,6 +235,7 @@ def create_studio_app() -> FastAPI:
                 and settings.redis_url
                 and settings.experimental_enabled("queue")
             ),
+            "graphql": graphql_available(),
             "experimental": sorted(settings.experimental_set),
             "active_apis": len(spec_store.all()),
         }

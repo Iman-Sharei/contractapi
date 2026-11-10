@@ -331,11 +331,10 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
         app.include_router(router)
 
     try:
-        from contractapi.core.config import get_settings
         from contractapi.application.graphql_facade import mount_graphql
 
-        if get_settings().experimental_enabled("graphql"):
-            mount_graphql(app, engine, spec)
+        # GraphQL is GA when strawberry is installed (optional extra).
+        mount_graphql(app, engine, spec)
     except Exception:  # noqa: BLE001
         pass
 
