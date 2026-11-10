@@ -1,4 +1,4 @@
-"""GraphQL read facade is GA — mounts when strawberry is installed."""
+"""GraphQL facade — SQL reads + table mutations (GA when strawberry installed)."""
 
 from __future__ import annotations
 
@@ -17,17 +17,21 @@ def test_graphql_not_experimental():
     assert "graphql" not in Settings(experimental="all").experimental_set
 
 
-def test_graphql_available_endpoints_query():
-    if not graphql_available():
-        pytest.skip("strawberry not installed")
+def _duck_engine():
     pytest.importorskip("duckdb")
     pytest.importorskip("duckdb_engine")
-
     url = "duckdb:///:memory:"
     engine = create_engine_for_config(
         DatabaseConfig(url=url, driver=DatabaseDriver.DUCKDB),
         pooled=False,
     )
+    return url, engine
+
+
+def test_graphql_table_and_sql_reads():
+    if not graphql_available():
+        pytest.skip("strawberry not installed")
+    url, engine = _duck_engine()
     with engine.begin() as conn:
         conn.execute(text("CREATE TABLE customers (id INTEGER, email VARCHAR)"))
         conn.execute(text("INSERT INTO customers VALUES (1, 'a@b.c')"))
@@ -54,7 +58,14 @@ def test_graphql_available_endpoints_query():
                     "fields": ["id", "email"],
                     "filters": ["email"],
                     "sortable": ["id"],
-                }
+                },
+                {
+                    "name": "metrics",
+                    "path": "/metrics",
+                    "sql": "SELECT 1 AS id, 'ok' AS status",
+                    "primary_key": "id",
+                    "fields": ["id", "status"],
+                },
             ],
         }
     )
@@ -67,7 +78,7 @@ def test_graphql_available_endpoints_query():
     assert res.status_code == 200, res.text
     payload = res.json()
     assert not payload.get("errors"), payload
-    assert "customers" in payload["data"]["availableEndpoints"]
+    assert set(payload["data"]["availableEndpoints"]) == {"customers", "metrics"}
 
     res2 = client.post(
         "/graphql",
@@ -78,9 +89,97 @@ def test_graphql_available_endpoints_query():
     assert not body.get("errors"), body
     assert body["data"]["endpoint"][0]["email"] == "a@b.c"
 
+    res3 = client.post(
+        "/graphql",
+        json={"query": '{ endpoint(name: "metrics", limit: 5) }'},
+    )
+    assert res3.status_code == 200, res3.text
+    metrics = res3.json()
+    assert not metrics.get("errors"), metrics
+    assert metrics["data"]["endpoint"][0]["status"] == "ok"
+
+
+def test_graphql_mutations_create_update_delete():
+    if not graphql_available():
+        pytest.skip("strawberry not installed")
+    url, engine = _duck_engine()
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE items (id INTEGER PRIMARY KEY, name VARCHAR)"))
+
+    spec = parse_spec(
+        {
+            "database": {"url": url, "driver": "duckdb"},
+            "app": {
+                "title": "GQL",
+                "version": "0.5.0",
+                "description": "t",
+                "read_only": False,
+                "auth": "none",
+                "api_prefix": "",
+            },
+            "endpoints": [
+                {
+                    "name": "items",
+                    "path": "/items",
+                    "table": "items",
+                    "schema": "main",
+                    "methods": ["GET", "POST", "PATCH", "DELETE"],
+                    "primary_key": "id",
+                    "fields": ["id", "name"],
+                    "writable_fields": ["id", "name"],
+                    "filters": ["name"],
+                    "sortable": ["id"],
+                }
+            ],
+        }
+    )
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    mount_graphql(app, engine, spec)
+    client = TestClient(app)
+
+    ops = client.post("/graphql", json={"query": "{ availableMutations }"})
+    assert ops.status_code == 200, ops.text
+    assert "create:items" in ops.json()["data"]["availableMutations"]
+
+    created = client.post(
+        "/graphql",
+        json={
+            "query": (
+                'mutation { createItem(endpoint: "items", data: {id: 1, name: "alpha"}) }'
+            )
+        },
+    )
+    assert created.status_code == 200, created.text
+    cbody = created.json()
+    assert not cbody.get("errors"), cbody
+    assert cbody["data"]["createItem"]["name"] == "alpha"
+
+    updated = client.post(
+        "/graphql",
+        json={
+            "query": (
+                'mutation { updateItem(endpoint: "items", id: 1, data: {name: "beta"}) }'
+            )
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    ubody = updated.json()
+    assert not ubody.get("errors"), ubody
+    assert ubody["data"]["updateItem"]["name"] == "beta"
+
+    deleted = client.post(
+        "/graphql",
+        json={"query": 'mutation { deleteItem(endpoint: "items", id: 1) }'},
+    )
+    assert deleted.status_code == 200, deleted.text
+    dbody = deleted.json()
+    assert not dbody.get("errors"), dbody
+    assert dbody["data"]["deleteItem"]["deleted"] is True
+
 
 def test_create_data_app_invokes_mount_graphql(monkeypatch: pytest.MonkeyPatch):
-    """GA path: create_data_app always attempts mount_graphql (no experimental gate)."""
     called: dict[str, bool] = {}
 
     def _fake_mount(app, engine, spec):  # noqa: ANN001
@@ -118,8 +217,7 @@ def test_create_data_app_invokes_mount_graphql(monkeypatch: pytest.MonkeyPatch):
     assert called.get("yes") is True
 
 
-def test_mount_graphql_noop_without_table_gets():
-    """SQL-only specs should not fail mount."""
+def test_mount_graphql_noop_without_get_or_writes():
     from unittest.mock import MagicMock
 
     spec = parse_spec(
@@ -135,9 +233,10 @@ def test_mount_graphql_noop_without_table_gets():
             },
             "endpoints": [
                 {
-                    "name": "metrics",
-                    "path": "/metrics",
-                    "sql": "SELECT 1 AS id",
+                    "name": "dead",
+                    "path": "/dead",
+                    "table": "dead",
+                    "methods": [],
                     "primary_key": "id",
                     "fields": ["id"],
                 }

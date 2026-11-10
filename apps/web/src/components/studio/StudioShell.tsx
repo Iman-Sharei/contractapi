@@ -805,7 +805,7 @@ export function StudioShell({
             href={`${getApiBase()}/data/graphql`}
             target="_blank"
             rel="noreferrer"
-            title="Requires pip install 'contractapi[graphql]' and an activated table GET endpoint"
+            title="Requires pip install 'contractapi[graphql]'. Reads: table + SQL GETs. Mutations: table POST/PATCH/DELETE."
           >
             GraphQL
           </a>

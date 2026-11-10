@@ -15,7 +15,7 @@
 
 - Parquet list export (`pyarrow`)
 - DuckDB driver
-- GraphQL read facade (`strawberry`) — mutations / SQL-endpoint GraphQL still later
+- GraphQL facade (`strawberry`) — table + SQL reads; table create/update/delete mutations
 - Studio OIDC JWKS (`STUDIO_OIDC_ISSUER`) — API key remains break-glass
 - Redis horizontal job queue + `contractapi worker`
 - Multi-active `/apis/{name}` alongside primary `/data`

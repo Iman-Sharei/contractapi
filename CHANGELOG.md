@@ -18,6 +18,7 @@ All notable changes to this project are documented here.
 - **GraphQL read facade is GA** — mounts `/graphql` when `strawberry` is installed; no experimental gate
 - **OIDC / Redis queue / multi-active are GA** — no experimental gates; Studio catalog shows live mounts + Mount /apis
 - `CONTRACTAPI_EXPERIMENTAL` default empty (legacy `all` is a no-op)
+- **GraphQL:** SQL endpoint reads + `createItem` / `updateItem` / `deleteItem` mutations for allowlisted table methods
 
 ### Quality
 - Backend e2e: activate with empty prefix → `GET /data/customers`
