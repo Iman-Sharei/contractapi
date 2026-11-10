@@ -246,13 +246,19 @@ export default function NewApiWizardPage() {
               Database URL
               <div className={styles.passwordRow}>
                 <input
+                  data-testid="wizard-db-url"
                   type={showPass ? "text" : "password"}
                   value={dbUrl}
                   onChange={(e) => setDbUrl(e.target.value)}
                   spellCheck={false}
                   autoComplete="off"
                 />
-                <button type="button" className={styles.ghost} onClick={() => setShowPass((v) => !v)}>
+                <button
+                  type="button"
+                  className={styles.ghost}
+                  data-testid="wizard-db-url-toggle"
+                  onClick={() => setShowPass((v) => !v)}
+                >
                   {showPass ? "Hide" : "Show"}
                 </button>
               </div>
@@ -271,11 +277,21 @@ export default function NewApiWizardPage() {
             </label>
             <label>
               Spec file name
-              <input value={specName} onChange={(e) => setSpecName(e.target.value)} />
+              <input
+                data-testid="wizard-spec-name"
+                value={specName}
+                onChange={(e) => setSpecName(e.target.value)}
+              />
             </label>
           </div>
           <div className={styles.toolbar}>
-            <button type="button" className={styles.primary} onClick={onIntrospect} disabled={pending}>
+            <button
+              type="button"
+              className={styles.primary}
+              data-testid="wizard-introspect"
+              onClick={onIntrospect}
+              disabled={pending}
+            >
               Introspect &amp; continue
             </button>
           </div>
@@ -283,7 +299,7 @@ export default function NewApiWizardPage() {
       )}
 
       {step === 1 && (
-        <section className={styles.panel}>
+        <section className={styles.panel} data-testid="wizard-pick">
           <h2>Pick tables &amp; columns</h2>
           <p>
             Expand a table to choose which columns become API fields. Sensitive columns stay off
@@ -382,6 +398,7 @@ export default function NewApiWizardPage() {
             <button
               type="button"
               className={styles.primary}
+              data-testid="wizard-pick-continue"
               disabled={pickedKeys.length === 0}
               onClick={() => goStep(2)}
             >
@@ -392,7 +409,7 @@ export default function NewApiWizardPage() {
       )}
 
       {step === 2 && (
-        <section className={styles.panel}>
+        <section className={styles.panel} data-testid="wizard-guards">
           <h2>Guards &amp; publish</h2>
           <p>Defaults favor read-only + API key. Leave prefix empty for URLs without a version.</p>
           <div className={styles.formGrid}>
@@ -467,6 +484,7 @@ ${draft.endpoints
             <button
               type="button"
               className={styles.primary}
+              data-testid="wizard-save-activate"
               onClick={() => onPublish(true)}
               disabled={pending}
             >

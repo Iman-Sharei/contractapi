@@ -1,6 +1,6 @@
 # Remaining gaps (post-Beta)
 
-**Maturity:** Beta `0.5.0b1` — see [STABILITY.md](STABILITY.md).
+**Maturity:** Beta `0.5.0` — see [STABILITY.md](STABILITY.md).
 
 ## Experimental (enabled via `DATAAPI_EXPERIMENTAL`)
 

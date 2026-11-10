@@ -6,7 +6,7 @@
 
 **Spec-first Postgres → FastAPI**, with a Next.js Studio.
 
-**Maturity: Beta (`0.5.0b1`)** — see [docs/STABILITY.md](docs/STABILITY.md).  
+**Maturity: Beta (`0.5.0`)** — see [docs/STABILITY.md](docs/STABILITY.md).  
 PyPI: `pip install contractapi` (import name `contractapi`).
 
 You design the API contract. The database is only the source — never the public surface.

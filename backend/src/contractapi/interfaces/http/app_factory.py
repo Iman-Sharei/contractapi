@@ -184,7 +184,7 @@ def create_studio_app() -> FastAPI:
 
     app = FastAPI(
         title="contractapi Studio",
-        version="0.5.0b1",
+        version="0.5.0",
         description=(
             "Spec-first Postgres → FastAPI control plane (Beta). "
             "Design contracts in Studio, activate, then consume /data "
@@ -225,7 +225,7 @@ def create_studio_app() -> FastAPI:
         return {
             "status": "ok",
             "service": settings.app_name,
-            "version": "0.5.0b1",
+            "version": "0.5.0",
             "maturity": "beta",
             "oidc": oidc_enabled(settings) and settings.experimental_enabled("oidc"),
             "job_queue": bool(

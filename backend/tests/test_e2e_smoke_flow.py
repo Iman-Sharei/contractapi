@@ -85,3 +85,48 @@ def test_studio_to_data_smoke():
     health = client.get("/health")
     assert health.status_code == 200
     assert health.json().get("maturity") == "beta"
+
+
+def test_studio_to_data_smoke_empty_prefix():
+    """Activate with api_prefix="" → routes live under /data/customers (no /v1)."""
+    _pg_or_skip()
+    client = TestClient(create_studio_app())
+
+    spec = {
+        "database": {"url": DB},
+        "app": {
+            "title": "Smoke No Prefix",
+            "auth": "none",
+            "read_only": True,
+            "api_prefix": "",
+        },
+        "endpoints": [
+            {
+                "name": "customers",
+                "path": "/customers",
+                "table": "customers",
+                "schema": "public",
+                "fields": ["id", "name", "email"],
+                "primary_key": "id",
+                "pagination": {"mode": "offset", "default_limit": 5, "max_limit": 20},
+            }
+        ],
+    }
+    saved = client.post(
+        "/studio/specs",
+        headers=_studio_headers(),
+        json={"name": "smoke_noprefix", "spec": spec},
+    )
+    assert saved.status_code == 200, saved.text
+
+    act = client.post(
+        "/studio/activate",
+        headers=_studio_headers(),
+        json={"spec": spec, "name": "smoke_noprefix"},
+    )
+    assert act.status_code == 200, act.text
+
+    data = client.get("/data/customers?limit=1")
+    assert data.status_code == 200, data.text
+    assert "items" in data.json()
+    assert len(data.json()["items"]) >= 1

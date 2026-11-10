@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "contractapi"
-version = "0.5.0b1"
+version = "0.5.0"
 description = "Spec-first Postgres → FastAPI: design the contract, then generate a secure API."
 readme = "README.md"
 requires-python = ">=3.10"

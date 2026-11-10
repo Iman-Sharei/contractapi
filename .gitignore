@@ -24,6 +24,10 @@ node_modules/
 .next/
 out/
 apps/web/.env.local
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
+apps/web/playwright/.cache/
 logs/
 api_keys.json
 specs/

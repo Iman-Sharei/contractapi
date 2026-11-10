@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## 0.5.0 — 2026-11-10 (Beta)
+
+### Studio
+- Three-step wizard: Connect → Pick tables/columns → Guards & publish
+- Default API prefix empty (URLs without `/v1`)
+- Editor form layout rebuilt (connection / surface / toggles)
+- Relations tab explains nested JSON arrays from FK children
+- Docker Compose Redis no longer binds host `:6379` (avoids local clashes)
+
+### Quality
+- Backend e2e: activate with empty prefix → `GET /data/customers`
+- Playwright smoke: Studio wizard → Activate → data plane
+- CI job `e2e` runs Postgres + API + Studio + Playwright
+
 ## 0.5.0b1 — 2026-10-30 (Beta)
 
 ### Packaging
