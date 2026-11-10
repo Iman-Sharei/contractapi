@@ -10,7 +10,7 @@ const sample: ApiSpecDraft = {
     description: "d",
     read_only: true,
     auth: "api_key",
-    api_prefix: "/v1",
+    api_prefix: "",
     environment: "staging",
     ip_allowlist: ["10.0.0."],
     webhooks: [{ url: "https://example.com/hook", events: ["create"], secret: "s" }],
@@ -41,6 +41,7 @@ const sample: ApiSpecDraft = {
 describe("buildYaml", () => {
   it("includes previously missing contract fields", () => {
     const yaml = buildYaml(sample);
+    expect(yaml).toContain('api_prefix: ""');
     expect(yaml).toContain("environment: staging");
     expect(yaml).toContain("ip_allowlist:");
     expect(yaml).toContain("webhooks:");

@@ -18,6 +18,7 @@ import {
   validateSpec,
 } from "@/lib/api";
 import { copyText } from "@/lib/copy";
+import { defaultSafeColumns } from "@/lib/pickColumns";
 import { tableKey } from "@/lib/tableKey";
 import type {
   ApiSpecDraft,
@@ -37,7 +38,7 @@ const emptySpec = (url: string): ApiSpecDraft => ({
     description: "Spec-first API over Postgres",
     read_only: true,
     auth: "api_key",
-    api_prefix: "/v1",
+    api_prefix: "",
     cache: { enabled: true, ttl_seconds: 30 },
     idempotency: { enabled: true, required_for_writes: false, ttl_seconds: 86400 },
     rate_limit: { enabled: true, requests_per_minute: 120 },
@@ -62,7 +63,7 @@ export function StudioShell({
   initialName?: string;
   embedded?: boolean;
 }) {
-  const [dbUrl, setDbUrl] = useState("postgresql://postgres:postgres@localhost:5433/app");
+  const [dbUrl, setDbUrl] = useState("postgresql://postgres:postgres@db:5432/app");
   const [schema, setSchema] = useState("public");
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
@@ -78,12 +79,13 @@ export function StudioShell({
   const [pending, startTransition] = useTransition();
   const [dirty, setDirty] = useState(false);
   const [showDbUrl, setShowDbUrl] = useState(false);
+  const [contractOpen, setContractOpen] = useState(false);
   const yamlWarnOnce = useRef(false);
   const skipDirty = useRef(true);
 
   // Playground
   const [playMethod, setPlayMethod] = useState("GET");
-  const [playPath, setPlayPath] = useState("/v1/customers");
+  const [playPath, setPlayPath] = useState("/customers");
   const [playQuery, setPlayQuery] = useState("limit=5");
   const [playBody, setPlayBody] = useState("");
   const [playBearer, setPlayBearer] = useState("");
@@ -168,19 +170,26 @@ export function StudioShell({
         setSpec(loaded.spec);
         setDbUrl(loaded.spec.database.url);
         setSpecName(initialName);
-        setActiveEndpoint(loaded.spec.endpoints[0]?.name ?? null);
+        const first = loaded.spec.endpoints[0] ?? null;
+        setActiveEndpoint(first?.name ?? null);
+        setEditorTab("contract");
         setDirty(false);
         setMessage(`Loaded '${initialName}'.`);
-        const schemaHint = loaded.spec.endpoints[0]?.schema || "public";
+        const schemaHint = first?.schema || "public";
         try {
           const intro = await introspectDatabase(loaded.spec.database.url, schemaHint);
           setTables(intro.tables);
           setSchema(schemaHint);
+          const match =
+            intro.tables.find((t) => t.schema === first?.schema && t.name === first?.table) ??
+            intro.tables.find((t) => t.name === first?.table) ??
+            intro.tables[0];
+          if (match) setSelectedTable(tableKey(match));
         } catch (e) {
           setMessage(
             `Loaded '${initialName}' (introspect warning: ${
               e instanceof Error ? e.message : "failed"
-            }).`,
+            }). Re-introspect after fixing the DB URL.`,
           );
         }
       } catch (e) {
@@ -229,11 +238,12 @@ export function StudioShell({
   function removeEndpoint() {
     if (!endpoint) return;
     if (!window.confirm(`Remove endpoint '${endpoint.name}'?`)) return;
-    setSpec((prev) => ({
-      ...prev,
-      endpoints: prev.endpoints.filter((e) => e.name !== endpoint.name),
-    }));
-    setActiveEndpoint(null);
+    const removed = endpoint.name;
+    setSpec((prev) => {
+      const next = prev.endpoints.filter((e) => e.name !== removed);
+      setActiveEndpoint(next[0]?.name ?? null);
+      return { ...prev, endpoints: next };
+    });
   }
 
   function onIntrospect() {
@@ -242,6 +252,7 @@ export function StudioShell({
       try {
         const result = await introspectDatabase(dbUrl, schema);
         setTables(result.tables);
+        if (result.tables[0]) setSelectedTable(tableKey(result.tables[0]));
         setSpec((prev) => ({ ...prev, database: { url: dbUrl } }));
         setStatus(`Loaded ${result.count} tables/views from schema '${schema}'.`);
       } catch (e) {
@@ -256,9 +267,8 @@ export function StudioShell({
     while (spec.endpoints.some((e) => e.name === name)) {
       name = `${slugify(table.name)}_${i++}`;
     }
-    const safeFields = table.columns.filter((c) => !c.sensitive).map((c) => c.name);
-    const pk = table.primary_keys[0] ?? safeFields[0] ?? "id";
-    const fields = safeFields.includes(pk) ? safeFields : [pk, ...safeFields];
+    const fields = defaultSafeColumns(table);
+    const pk = table.primary_keys[0] ?? fields[0] ?? "id";
     const draft: EndpointDraft = {
       name,
       path: `/${name}`,
@@ -266,8 +276,8 @@ export function StudioShell({
       schema: table.schema,
       methods: ["GET"],
       primary_key: pk,
-      fields: fields.slice(0, 12),
-      writable_fields: fields.filter((f) => f !== pk).slice(0, 8),
+      fields,
+      writable_fields: fields.filter((f) => f !== pk),
       filters: fields.filter((f) => f !== pk).slice(0, 3),
       filter_operators: [...ALL_FILTER_OPS],
       sortable: [pk, ...(fields.includes("created_at") ? ["created_at"] : [])],
@@ -356,10 +366,11 @@ export function StudioShell({
   }
 
   function addRelation(child: TableInfo) {
-    if (!endpoint || !selected) return;
-    const fk = child.foreign_keys.find((f) => f.ref_table === selected.name);
+    if (!endpoint) return;
+    const parentName = selected?.name ?? endpoint.table;
+    const fk = child.foreign_keys.find((f) => f.ref_table === parentName);
     if (!fk) {
-      setStatus(null, `${child.name} does not reference ${selected.name}`);
+      setStatus(null, `${child.name} does not reference ${parentName}`);
       return;
     }
     const relName = slugify(child.name);
@@ -367,7 +378,7 @@ export function StudioShell({
       setStatus(null, `Relation '${relName}' already exists.`);
       return;
     }
-    const safeFields = child.columns.filter((c) => !c.sensitive).map((c) => c.name);
+    const fields = defaultSafeColumns(child);
     const rel: RelationDraft = {
       name: relName,
       table: child.name,
@@ -375,12 +386,12 @@ export function StudioShell({
       type: "one_to_many",
       local_key: fk.ref_column || endpoint.primary_key,
       foreign_key: fk.column,
-      fields: safeFields.slice(0, 8),
-      primary_key: child.primary_keys[0] ?? "id",
+      fields,
+      primary_key: child.primary_keys[0] ?? fields[0] ?? "id",
       max_per_parent: 50,
     };
     updateEndpoint({ relations: [...(endpoint.relations ?? []), rel] });
-    setStatus(`Added relation ${relName}`);
+    setStatus(`Added nested array '${relName}' on ${endpoint.path}`);
   }
 
   function removeRelation(name: string) {
@@ -568,8 +579,9 @@ export function StudioShell({
     });
   }
 
-  const childTables = selected
-    ? tables.filter((t) => t.foreign_keys.some((fk) => fk.ref_table === selected.name))
+  const parentTableName = selected?.name ?? endpoint?.table ?? null;
+  const childTables = parentTableName
+    ? tables.filter((t) => t.foreign_keys.some((fk) => fk.ref_table === parentTableName))
     : [];
 
   return (
@@ -587,217 +599,235 @@ export function StudioShell({
         </div>
       )}
 
-      <section className={styles.connectWide}>
-        <label>
-          Postgres URL
-          <div className={styles.inputWithBtn}>
-            <input
-              type={showDbUrl ? "text" : "password"}
-              value={dbUrl}
-              onChange={(e) => setDbUrl(e.target.value)}
-              spellCheck={false}
-              autoComplete="off"
-            />
-            <button
-              type="button"
-              className={styles.ghostBtn}
-              onClick={() => setShowDbUrl((v) => !v)}
-              aria-pressed={showDbUrl}
-            >
-              {showDbUrl ? "Hide" : "Show"}
+      <section className={styles.settingsCard}>
+        <div className={styles.settingsHead}>
+          <h2>Connection</h2>
+          <div className={styles.settingsActions}>
+            <button type="button" className={styles.primary} onClick={onIntrospect} disabled={pending}>
+              {tables.length === 0 ? "Introspect schema" : "Re-introspect"}
+            </button>
+            <button type="button" className={styles.secondary} onClick={onSave} disabled={pending}>
+              Save
+            </button>
+            <button type="button" className={styles.secondary} onClick={refreshSaved}>
+              List
             </button>
           </div>
-        </label>
-        <label>
-          Schema
-          <input value={schema} onChange={(e) => setSchema(e.target.value)} />
-        </label>
-        <label>
-          Spec name
-          <input value={specName} onChange={(e) => setSpecName(e.target.value)} />
-        </label>
-        <label>
-          Auth
-          <select
-            value={spec.app.auth}
-            onChange={(e) => patchApp({ auth: e.target.value as ApiSpecDraft["app"]["auth"] })}
-          >
-            <option value="api_key">API key</option>
-            <option value="jwt">JWT + RBAC</option>
-            <option value="none">None (dev)</option>
-          </select>
-        </label>
-        <label>
-          API prefix
-          <input
-            value={spec.app.api_prefix ?? "/v1"}
-            onChange={(e) => patchApp({ api_prefix: e.target.value })}
-          />
-        </label>
-        <div className={styles.rowGap}>
-          <button type="button" className={styles.primary} onClick={onIntrospect} disabled={pending}>
-            Introspect
-          </button>
-          <button type="button" className={styles.secondary} onClick={onSave} disabled={pending}>
-            Save
-          </button>
-          <button type="button" className={styles.secondary} onClick={refreshSaved}>
-            List
-          </button>
+        </div>
+        <div className={styles.fieldGrid}>
+          <label className={styles.span3}>
+            <span className={styles.fieldLabel}>Postgres URL</span>
+            <div className={styles.inputWithBtn}>
+              <input
+                type={showDbUrl ? "text" : "password"}
+                value={dbUrl}
+                onChange={(e) => setDbUrl(e.target.value)}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                className={styles.ghostBtn}
+                onClick={() => setShowDbUrl((v) => !v)}
+                aria-pressed={showDbUrl}
+              >
+                {showDbUrl ? "Hide" : "Show"}
+              </button>
+            </div>
+          </label>
+          <label>
+            <span className={styles.fieldLabel}>Schema</span>
+            <input value={schema} onChange={(e) => setSchema(e.target.value)} />
+          </label>
+          <label>
+            <span className={styles.fieldLabel}>Spec name</span>
+            <input value={specName} onChange={(e) => setSpecName(e.target.value)} />
+          </label>
+          <label>
+            <span className={styles.fieldLabel}>Auth</span>
+            <select
+              value={spec.app.auth}
+              onChange={(e) => patchApp({ auth: e.target.value as ApiSpecDraft["app"]["auth"] })}
+            >
+              <option value="api_key">API key</option>
+              <option value="jwt">JWT + RBAC</option>
+              <option value="none">None (dev)</option>
+            </select>
+          </label>
+          <label>
+            <span className={styles.fieldLabel}>API prefix</span>
+            <input
+              value={spec.app.api_prefix ?? ""}
+              onChange={(e) => patchApp({ api_prefix: e.target.value })}
+              placeholder="empty = no version"
+              spellCheck={false}
+            />
+          </label>
         </div>
       </section>
 
-      <section className={styles.connectWide}>
-        <label>
-          Title
-          <input value={spec.app.title} onChange={(e) => patchApp({ title: e.target.value })} />
-        </label>
-        <label>
-          Version
-          <input value={spec.app.version} onChange={(e) => patchApp({ version: e.target.value })} />
-        </label>
-        <label className={styles.span2}>
-          Description
-          <input
-            value={spec.app.description}
-            onChange={(e) => patchApp({ description: e.target.value })}
-          />
-        </label>
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={spec.app.read_only}
-            onChange={(e) => patchApp({ read_only: e.target.checked })}
-          />
-          Read-only API
-        </label>
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={spec.app.cache?.enabled ?? true}
-            onChange={(e) =>
-              patchApp({
-                cache: {
-                  enabled: e.target.checked,
-                  ttl_seconds: spec.app.cache?.ttl_seconds ?? 30,
-                },
-              })
-            }
-          />
-          Cache
-        </label>
-        <label>
-          Cache TTL (s)
-          <input
-            type="number"
-            min={0}
-            value={spec.app.cache?.ttl_seconds ?? 30}
-            onChange={(e) =>
-              patchApp({
-                cache: {
-                  enabled: spec.app.cache?.enabled ?? true,
-                  ttl_seconds: Number(e.target.value) || 0,
-                },
-              })
-            }
-          />
-        </label>
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={spec.app.rate_limit.enabled}
-            onChange={(e) =>
-              patchApp({
-                rate_limit: {
-                  ...spec.app.rate_limit,
-                  enabled: e.target.checked,
-                },
-              })
-            }
-          />
-          Rate limit
-        </label>
-        <label>
-          Rate / min
-          <input
-            type="number"
-            min={1}
-            value={spec.app.rate_limit.requests_per_minute}
-            onChange={(e) =>
-              patchApp({
-                rate_limit: {
-                  ...spec.app.rate_limit,
-                  requests_per_minute: Number(e.target.value) || 1,
-                },
-              })
-            }
-          />
-        </label>
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={spec.app.idempotency?.enabled ?? true}
-            onChange={(e) =>
-              patchApp({
-                idempotency: {
-                  enabled: e.target.checked,
-                  required_for_writes: spec.app.idempotency?.required_for_writes ?? false,
-                  ttl_seconds: spec.app.idempotency?.ttl_seconds ?? 86400,
-                },
-              })
-            }
-          />
-          Idempotency
-        </label>
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={spec.app.idempotency?.required_for_writes ?? false}
-            onChange={(e) =>
-              patchApp({
-                idempotency: {
-                  enabled: spec.app.idempotency?.enabled ?? true,
-                  required_for_writes: e.target.checked,
-                  ttl_seconds: spec.app.idempotency?.ttl_seconds ?? 86400,
-                },
-              })
-            }
-          />
-          Idempotency required for writes
-        </label>
-        <label>
-          Idempotency TTL (s)
-          <input
-            type="number"
-            min={0}
-            value={spec.app.idempotency?.ttl_seconds ?? 86400}
-            onChange={(e) =>
-              patchApp({
-                idempotency: {
-                  enabled: spec.app.idempotency?.enabled ?? true,
-                  required_for_writes: spec.app.idempotency?.required_for_writes ?? false,
-                  ttl_seconds: Number(e.target.value) || 0,
-                },
-              })
-            }
-          />
-        </label>
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={spec.app.compression ?? true}
-            onChange={(e) => patchApp({ compression: e.target.checked })}
-          />
-          Gzip
-        </label>
-        <label className={styles.check}>
-          <input
-            type="checkbox"
-            checked={spec.app.audit_enabled ?? true}
-            onChange={(e) => patchApp({ audit_enabled: e.target.checked })}
-          />
-          Audit
-        </label>
+      <section className={styles.settingsCard}>
+        <div className={styles.settingsHead}>
+          <h2>API surface</h2>
+        </div>
+        <div className={styles.fieldGrid}>
+          <label className={styles.span2}>
+            <span className={styles.fieldLabel}>Title</span>
+            <input value={spec.app.title} onChange={(e) => patchApp({ title: e.target.value })} />
+          </label>
+          <label>
+            <span className={styles.fieldLabel}>Version</span>
+            <input value={spec.app.version} onChange={(e) => patchApp({ version: e.target.value })} />
+          </label>
+          <label className={styles.span3}>
+            <span className={styles.fieldLabel}>Description</span>
+            <input
+              value={spec.app.description}
+              onChange={(e) => patchApp({ description: e.target.value })}
+            />
+          </label>
+        </div>
+
+        <div className={styles.toggleRow}>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={spec.app.read_only}
+              onChange={(e) => patchApp({ read_only: e.target.checked })}
+            />
+            <span>Read-only</span>
+          </label>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={spec.app.cache?.enabled ?? true}
+              onChange={(e) =>
+                patchApp({
+                  cache: {
+                    enabled: e.target.checked,
+                    ttl_seconds: spec.app.cache?.ttl_seconds ?? 30,
+                  },
+                })
+              }
+            />
+            <span>Cache</span>
+          </label>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={spec.app.rate_limit.enabled}
+              onChange={(e) =>
+                patchApp({
+                  rate_limit: {
+                    ...spec.app.rate_limit,
+                    enabled: e.target.checked,
+                  },
+                })
+              }
+            />
+            <span>Rate limit</span>
+          </label>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={spec.app.idempotency?.enabled ?? true}
+              onChange={(e) =>
+                patchApp({
+                  idempotency: {
+                    enabled: e.target.checked,
+                    required_for_writes: spec.app.idempotency?.required_for_writes ?? false,
+                    ttl_seconds: spec.app.idempotency?.ttl_seconds ?? 86400,
+                  },
+                })
+              }
+            />
+            <span>Idempotency</span>
+          </label>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={spec.app.idempotency?.required_for_writes ?? false}
+              onChange={(e) =>
+                patchApp({
+                  idempotency: {
+                    enabled: spec.app.idempotency?.enabled ?? true,
+                    required_for_writes: e.target.checked,
+                    ttl_seconds: spec.app.idempotency?.ttl_seconds ?? 86400,
+                  },
+                })
+              }
+            />
+            <span>Idempotency required</span>
+          </label>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={spec.app.compression ?? true}
+              onChange={(e) => patchApp({ compression: e.target.checked })}
+            />
+            <span>Gzip</span>
+          </label>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={spec.app.audit_enabled ?? true}
+              onChange={(e) => patchApp({ audit_enabled: e.target.checked })}
+            />
+            <span>Audit</span>
+          </label>
+        </div>
+
+        <div className={styles.fieldGrid}>
+          <label>
+            <span className={styles.fieldLabel}>Cache TTL (s)</span>
+            <input
+              type="number"
+              min={0}
+              value={spec.app.cache?.ttl_seconds ?? 30}
+              onChange={(e) =>
+                patchApp({
+                  cache: {
+                    enabled: spec.app.cache?.enabled ?? true,
+                    ttl_seconds: Number(e.target.value) || 0,
+                  },
+                })
+              }
+            />
+          </label>
+          <label>
+            <span className={styles.fieldLabel}>Rate / min</span>
+            <input
+              type="number"
+              min={1}
+              value={spec.app.rate_limit.requests_per_minute}
+              onChange={(e) =>
+                patchApp({
+                  rate_limit: {
+                    ...spec.app.rate_limit,
+                    requests_per_minute: Number(e.target.value) || 1,
+                  },
+                })
+              }
+            />
+          </label>
+          <label>
+            <span className={styles.fieldLabel}>Idempotency TTL (s)</span>
+            <input
+              type="number"
+              min={0}
+              value={spec.app.idempotency?.ttl_seconds ?? 86400}
+              onChange={(e) =>
+                patchApp({
+                  idempotency: {
+                    enabled: spec.app.idempotency?.enabled ?? true,
+                    required_for_writes: spec.app.idempotency?.required_for_writes ?? false,
+                    ttl_seconds: Number(e.target.value) || 0,
+                  },
+                })
+              }
+            />
+          </label>
+        </div>
       </section>
 
       {savedNames.length > 0 && (
@@ -819,7 +849,7 @@ export function StudioShell({
         </div>
       )}
 
-      <div className={styles.grid}>
+      <div className={contractOpen ? styles.grid : styles.gridYamlCollapsed}>
         <aside className={styles.panel}>
           <div className={styles.panelHead}>
             <h2>Schema</h2>
@@ -853,6 +883,11 @@ export function StudioShell({
                 onClick={() => addEndpointFromTable(selected)}
               >
                 Add endpoint from {selected.kind === "view" ? "view" : "table"}
+              </button>
+            )}
+            {tables.length === 0 && (
+              <button type="button" className={styles.secondary} onClick={onIntrospect} disabled={pending}>
+                Re-introspect database
               </button>
             )}
             <button type="button" className={styles.secondary} onClick={addSqlEndpoint}>
@@ -896,6 +931,33 @@ export function StudioShell({
               <p className={styles.empty}>Add a table/view endpoint or a custom SQL endpoint.</p>
             )}
           </div>
+
+          {!endpoint && spec.endpoints.length > 0 && (
+            <div className={styles.emptyState}>
+              <p>Select an endpoint tab above to edit its contract.</p>
+              <button
+                type="button"
+                className={styles.primary}
+                onClick={() => setActiveEndpoint(spec.endpoints[0]?.name ?? null)}
+              >
+                Open {spec.endpoints[0]?.path ?? "first endpoint"}
+              </button>
+            </div>
+          )}
+
+          {!endpoint && spec.endpoints.length === 0 && (
+            <div className={styles.emptyState}>
+              <p>
+                No endpoints yet. Introspect the database on the left, pick a table, then add an
+                endpoint — or use the New API wizard.
+              </p>
+              {tables.length === 0 && (
+                <button type="button" className={styles.primary} onClick={onIntrospect} disabled={pending}>
+                  Introspect schema
+                </button>
+              )}
+            </div>
+          )}
 
           {endpoint && (
             <>
@@ -1423,28 +1485,45 @@ export function StudioShell({
                   ) : (
                     <>
                       <p className={styles.hint}>
-                        Child tables referencing <strong>{selected?.name ?? endpoint.table}</strong> via FK:
+                        Nested arrays in the JSON response. Pick a child table that has a foreign key
+                        to <strong>{parentTableName ?? endpoint.table}</strong>. After Activate, each
+                        parent row includes that array automatically (no extra query param).
                       </p>
+                      <pre className={styles.yaml}>
+                        {`{
+  "id": "…",
+  "email": "…",
+  "orders": [          // ← relation name
+    { "id": "…", "total": 42 }
+  ]
+}`}
+                      </pre>
+                      <h3>Add nested array from FK child</h3>
                       <div className={styles.rowGap}>
                         {childTables.map((c) => (
                           <button
-                            key={c.name}
+                            key={tableKey(c)}
                             type="button"
                             className={styles.secondary}
                             onClick={() => addRelation(c)}
                           >
-                            + {c.name}
+                            + {c.schema}.{c.name}
                           </button>
                         ))}
                         {childTables.length === 0 && (
-                          <span className={styles.empty}>No FK children found.</span>
+                          <span className={styles.empty}>
+                            No FK children found — introspect schema, or ensure{" "}
+                            <code>orders.customer_id → customers.id</code> exists.
+                          </span>
                         )}
                       </div>
+                      <h3>Active relations</h3>
                       <ul className={styles.relList}>
                         {(endpoint.relations ?? []).map((r) => (
                           <li key={r.name}>
                             <code>
-                              {r.name}: {r.table}.{r.foreign_key} → {r.local_key}
+                              {r.name}[] ← {r.schema}.{r.table} ({r.foreign_key} → {r.local_key}) ·{" "}
+                              {r.fields.length} fields
                             </code>
                             <button
                               type="button"
@@ -1456,6 +1535,9 @@ export function StudioShell({
                             </button>
                           </li>
                         ))}
+                        {(endpoint.relations ?? []).length === 0 && (
+                          <li className={styles.empty}>No nested arrays yet.</li>
+                        )}
                       </ul>
                     </>
                   )}
@@ -1694,21 +1776,33 @@ export function StudioShell({
           )}
         </section>
 
-        <aside className={styles.panel}>
+        <aside className={contractOpen ? styles.panel : styles.panelCollapsed}>
           <div className={styles.panelHead}>
             <h2>Contract</h2>
-            <span>live YAML</span>
+            <div className={styles.rowGap}>
+              <button
+                type="button"
+                className={styles.ghostBtn}
+                aria-expanded={contractOpen}
+                onClick={() => setContractOpen((v) => !v)}
+              >
+                {contractOpen ? "Hide YAML" : "Show YAML"}
+              </button>
+              {contractOpen && (
+                <button
+                  type="button"
+                  className={styles.ghostBtn}
+                  onClick={() => onCopy(yamlText || localYaml, "YAML")}
+                >
+                  Copy
+                </button>
+              )}
+            </div>
           </div>
-          <div className={styles.rowGap}>
-            <button
-              type="button"
-              className={styles.ghostBtn}
-              onClick={() => onCopy(yamlText || localYaml, "YAML")}
-            >
-              Copy
-            </button>
-          </div>
-          <pre className={styles.yaml}>{yamlText || localYaml}</pre>
+          {contractOpen && <pre className={styles.yaml}>{yamlText || localYaml}</pre>}
+          {!contractOpen && (
+            <p className={styles.empty}>YAML panel collapsed — expand to inspect the live contract.</p>
+          )}
         </aside>
       </div>
     </div>

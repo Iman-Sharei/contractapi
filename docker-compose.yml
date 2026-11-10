@@ -18,8 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # No host port — avoids clash with a local Redis; API reaches it as redis:6379
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

@@ -375,7 +375,7 @@ export function buildYaml(spec: ApiSpecDraft): string {
   lines.push(`  description: ${JSON.stringify(app.description)}`);
   lines.push(`  read_only: ${app.read_only}`);
   lines.push(`  auth: ${app.auth}`);
-  lines.push(`  api_prefix: ${app.api_prefix ?? "/v1"}`);
+  lines.push(`  api_prefix: ${JSON.stringify(app.api_prefix ?? "")}`);
   if (app.legacy_api_prefix) lines.push(`  legacy_api_prefix: ${app.legacy_api_prefix}`);
   if (app.environment) lines.push(`  environment: ${app.environment}`);
   lines.push(`  audit_enabled: ${app.audit_enabled ?? true}`);
