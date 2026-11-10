@@ -77,6 +77,8 @@ export default function NewApiWizardPage() {
         sortable: [pk],
         pagination: { enabled: true, mode: "cursor", default_limit: 20, max_limit: 100 },
         csv_export: true,
+        ndjson_export: true,
+        parquet_export: true,
         description: `Generated from ${table.kind ?? "table"} ${table.schema}.${table.name}`,
       });
     }
@@ -84,7 +86,7 @@ export default function NewApiWizardPage() {
       database: { url: dbUrl },
       app: {
         title,
-        version: "0.1.0",
+        version: "0.5.0",
         description: "Created with contractapi Studio wizard",
         read_only: readOnly,
         auth,
@@ -95,6 +97,15 @@ export default function NewApiWizardPage() {
         audit_enabled: true,
         compression: true,
         tracing: true,
+        jwt: {
+          issuer: "contractapi",
+          audience: "contractapi-clients",
+          algorithm: "HS256",
+          access_ttl_minutes: 15,
+          refresh_ttl_days: 7,
+        },
+        webhooks: [],
+        rbac: [],
       },
       endpoints,
     };

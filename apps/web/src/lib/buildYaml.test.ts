@@ -14,6 +14,14 @@ const sample: ApiSpecDraft = {
     environment: "staging",
     ip_allowlist: ["10.0.0."],
     webhooks: [{ url: "https://example.com/hook", events: ["create"], secret: "s" }],
+    jwt: {
+      issuer: "contractapi",
+      audience: "clients",
+      algorithm: "HS256",
+      access_ttl_minutes: 30,
+      refresh_ttl_days: 14,
+    },
+    rbac: [{ role: "analyst", endpoints: { customers: ["id", "email"] } }],
     cache: { enabled: true, ttl_seconds: 30 },
     idempotency: { enabled: true, required_for_writes: true, ttl_seconds: 60 },
     rate_limit: { enabled: true, requests_per_minute: 60 },
@@ -45,6 +53,9 @@ describe("buildYaml", () => {
     expect(yaml).toContain("environment: staging");
     expect(yaml).toContain("ip_allowlist:");
     expect(yaml).toContain("webhooks:");
+    expect(yaml).toContain("jwt:");
+    expect(yaml).toContain("access_ttl_minutes: 30");
+    expect(yaml).toContain("rbac:");
     expect(yaml).toContain("ndjson_export: true");
     expect(yaml).toContain("parquet_export: true");
     expect(yaml).toContain("search_param: q");

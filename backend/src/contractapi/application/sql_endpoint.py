@@ -126,15 +126,6 @@ def _ndjson_response(items: list[dict[str, Any]], fields: list[str]) -> PlainTex
 
 def _parquet_response(items: list[dict[str, Any]], fields: list[str]) -> Response:
     """Serialize rows as Apache Parquet (requires optional pyarrow)."""
-    from contractapi.core.config import get_settings
-
-    if not get_settings().experimental_enabled("parquet"):
-        raise AppError(
-            type_="https://contractapi.dev/problems/experimental-disabled",
-            title="Parquet disabled",
-            status=501,
-            detail="Enable with CONTRACTAPI_EXPERIMENTAL=parquet (or all)",
-        )
     try:
         import pyarrow as pa
         import pyarrow.parquet as pq

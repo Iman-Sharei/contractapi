@@ -80,7 +80,8 @@ class Settings(BaseSettings):
         default="",
         description="Comma-separated emails allowed into Studio; empty = any valid token.",
     )
-    # Comma list: graphql,duckdb,parquet,oidc,queue,multi_active — or "all"
+    # Comma list: graphql,duckdb,oidc,queue,multi_active — or "all"
+    # Parquet export is GA when pyarrow is installed (no experimental gate).
     experimental: str = Field(
         default="all",
         description="Experimental feature gate for Beta. Use empty to disable optional surfaces.",
@@ -111,7 +112,7 @@ class Settings(BaseSettings):
         if not raw:
             return set()
         if raw == "all":
-            return {"graphql", "duckdb", "parquet", "oidc", "queue", "multi_active"}
+            return {"graphql", "duckdb", "oidc", "queue", "multi_active"}
         return {p.strip() for p in raw.split(",") if p.strip()}
 
     def experimental_enabled(self, feature: str) -> bool:

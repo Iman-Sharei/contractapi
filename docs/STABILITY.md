@@ -19,8 +19,9 @@ Marked in OpenAPI / logs / docs as experimental:
 - DuckDB driver
 - OIDC Studio login
 - Redis horizontal job queue + `contractapi worker`
-- Parquet export
 - Multi-active `/apis/{name}` beyond single primary `/data`
+
+**GA:** Parquet list export (optional `pyarrow` extra; no experimental gate).
 
 ## Versioning rules
 

@@ -8,8 +8,12 @@ All notable changes to this project are documented here.
 - Three-step wizard: Connect → Pick tables/columns → Guards & publish
 - Default API prefix empty (URLs without `/v1`)
 - Editor form layout rebuilt (connection / surface / toggles)
-- Relations tab explains nested JSON arrays from FK children
+- Relations editor: type, keys, max_per_parent, field pickers; many-to-one from parent FKs
+- Security tab: FieldValidation rules, multi-webhook events, JWT config, RBAC field matrix
 - Docker Compose Redis no longer binds host `:6379` (avoids local clashes)
+
+### Runtime
+- **Parquet export is GA** — no `CONTRACTAPI_EXPERIMENTAL=parquet` gate; still needs `pyarrow`
 
 ### Quality
 - Backend e2e: activate with empty prefix → `GET /data/customers`

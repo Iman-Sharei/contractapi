@@ -71,6 +71,23 @@ export type WebhookDraft = {
   timeout_seconds?: number;
 };
 
+export type JwtConfigDraft = {
+  issuer: string;
+  audience: string;
+  algorithm: string;
+  access_ttl_minutes: number;
+  refresh_ttl_days: number;
+};
+
+export type RbacRoleDraft = {
+  role: string;
+  endpoints: Record<string, string[]>;
+};
+
+export const WEBHOOK_EVENTS = ["create", "update", "delete", "bulk_create"] as const;
+
+export const VALIDATION_FORMATS = ["email", "uuid", "uri"] as const;
+
 export type EndpointDraft = {
   name: string;
   path: string;
@@ -126,9 +143,10 @@ export type ApiSpecDraft = {
     tracing?: boolean;
     ip_allowlist?: string[];
     webhooks?: WebhookDraft[];
+    jwt?: JwtConfigDraft;
     environment?: string;
     deprecation?: DeprecationConfig;
-    rbac?: { role: string; endpoints: Record<string, string[]> }[];
+    rbac?: RbacRoleDraft[];
   };
   endpoints: EndpointDraft[];
 };

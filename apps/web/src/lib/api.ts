@@ -384,6 +384,14 @@ export function buildYaml(spec: ApiSpecDraft): string {
   if (app.ip_allowlist?.length) {
     lines.push(`  ip_allowlist: [${app.ip_allowlist.map((x) => JSON.stringify(x)).join(", ")}]`);
   }
+  if (app.jwt) {
+    lines.push("  jwt:");
+    lines.push(`    issuer: ${JSON.stringify(app.jwt.issuer)}`);
+    lines.push(`    audience: ${JSON.stringify(app.jwt.audience)}`);
+    lines.push(`    algorithm: ${app.jwt.algorithm}`);
+    lines.push(`    access_ttl_minutes: ${app.jwt.access_ttl_minutes}`);
+    lines.push(`    refresh_ttl_days: ${app.jwt.refresh_ttl_days}`);
+  }
   if (app.webhooks?.length) {
     lines.push("  webhooks:");
     for (const wh of app.webhooks) {

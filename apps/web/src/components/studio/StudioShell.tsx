@@ -23,18 +23,29 @@ import { tableKey } from "@/lib/tableKey";
 import type {
   ApiSpecDraft,
   EndpointDraft,
+  FieldValidation,
   RelationDraft,
+  RbacRoleDraft,
   TableInfo,
   ValidateResult,
+  WebhookDraft,
 } from "@/lib/types";
-import { ALL_FILTER_OPS, ALL_METHODS } from "@/lib/types";
+import { ALL_FILTER_OPS, ALL_METHODS, VALIDATION_FORMATS, WEBHOOK_EVENTS } from "@/lib/types";
 import styles from "./studio.module.css";
+
+const emptyJwt = () => ({
+  issuer: "contractapi",
+  audience: "contractapi-clients",
+  algorithm: "HS256",
+  access_ttl_minutes: 15,
+  refresh_ttl_days: 7,
+});
 
 const emptySpec = (url: string): ApiSpecDraft => ({
   database: { url },
   app: {
     title: "My Data API",
-    version: "0.3.0",
+    version: "0.5.0",
     description: "Spec-first API over Postgres",
     read_only: true,
     auth: "api_key",
@@ -45,6 +56,8 @@ const emptySpec = (url: string): ApiSpecDraft => ({
     audit_enabled: true,
     compression: true,
     tracing: true,
+    jwt: emptyJwt(),
+    webhooks: [],
     rbac: [],
   },
   endpoints: [],
@@ -288,6 +301,8 @@ export function StudioShell({
       bulk_enabled: true,
       async_writes: false,
       csv_export: true,
+      ndjson_export: true,
+      parquet_export: true,
       description: `API for ${table.kind === "view" ? "view" : "table"} ${table.name}`,
     };
     setSpec((prev) => ({
@@ -394,10 +409,144 @@ export function StudioShell({
     setStatus(`Added nested array '${relName}' on ${endpoint.path}`);
   }
 
+  function addManyToOne(fk: { column: string; ref_table: string; ref_column: string }) {
+    if (!endpoint) return;
+    const target = tables.find((t) => t.name === fk.ref_table);
+    if (!target) {
+      setStatus(null, `Table ${fk.ref_table} not in introspected schema.`);
+      return;
+    }
+    const relName = slugify(fk.ref_table);
+    if (endpoint.relations?.some((r) => r.name === relName)) {
+      setStatus(null, `Relation '${relName}' already exists.`);
+      return;
+    }
+    const fields = defaultSafeColumns(target);
+    const rel: RelationDraft = {
+      name: relName,
+      table: target.name,
+      schema: target.schema,
+      type: "many_to_one",
+      local_key: fk.column,
+      foreign_key: fk.ref_column || target.primary_keys[0] || "id",
+      fields,
+      primary_key: target.primary_keys[0] ?? fields[0] ?? "id",
+      max_per_parent: 1,
+    };
+    updateEndpoint({ relations: [...(endpoint.relations ?? []), rel] });
+    setStatus(`Added nested object '${relName}' on ${endpoint.path}`);
+  }
+
+  function updateRelation(name: string, patch: Partial<RelationDraft>) {
+    if (!endpoint) return;
+    updateEndpoint({
+      relations: (endpoint.relations ?? []).map((r) =>
+        r.name === name ? { ...r, ...patch } : r,
+      ),
+    });
+  }
+
+  function toggleRelationField(relName: string, field: string) {
+    if (!endpoint) return;
+    const rel = (endpoint.relations ?? []).find((r) => r.name === relName);
+    if (!rel) return;
+    const set = new Set(rel.fields);
+    if (set.has(field)) {
+      if (field === rel.primary_key || field === rel.foreign_key) return;
+      if (set.size <= 1) return;
+      set.delete(field);
+    } else {
+      set.add(field);
+    }
+    updateRelation(relName, { fields: [...set] });
+  }
+
   function removeRelation(name: string) {
     if (!endpoint) return;
     updateEndpoint({
       relations: (endpoint.relations ?? []).filter((r) => r.name !== name),
+    });
+  }
+
+  function patchWebhook(index: number, patch: Partial<WebhookDraft>) {
+    const hooks = [...(spec.app.webhooks ?? [])];
+    if (!hooks[index]) return;
+    hooks[index] = { ...hooks[index], ...patch };
+    patchApp({ webhooks: hooks });
+  }
+
+  function addWebhook() {
+    const hooks = [...(spec.app.webhooks ?? [])];
+    hooks.push({
+      url: "",
+      events: ["create", "update", "delete"],
+      secret: "",
+      timeout_seconds: 3,
+    });
+    patchApp({ webhooks: hooks });
+  }
+
+  function removeWebhook(index: number) {
+    patchApp({ webhooks: (spec.app.webhooks ?? []).filter((_, i) => i !== index) });
+  }
+
+  function addRbacRole() {
+    const roles = [...(spec.app.rbac ?? [])];
+    let role = "analyst";
+    let i = 2;
+    while (roles.some((r) => r.role === role)) role = `role_${i++}`;
+    const endpoints: Record<string, string[]> = {};
+    for (const ep of spec.endpoints) {
+      endpoints[ep.name] = [...ep.fields];
+    }
+    roles.push({ role, endpoints });
+    patchApp({ rbac: roles });
+  }
+
+  function updateRbacRole(index: number, patch: Partial<RbacRoleDraft>) {
+    const roles = [...(spec.app.rbac ?? [])];
+    if (!roles[index]) return;
+    roles[index] = { ...roles[index], ...patch };
+    patchApp({ rbac: roles });
+  }
+
+  function removeRbacRole(index: number) {
+    patchApp({ rbac: (spec.app.rbac ?? []).filter((_, i) => i !== index) });
+  }
+
+  function toggleRbacField(roleIndex: number, epName: string, field: string) {
+    const roles = [...(spec.app.rbac ?? [])];
+    const role = roles[roleIndex];
+    if (!role) return;
+    const current = new Set(role.endpoints[epName] ?? []);
+    if (current.has(field)) current.delete(field);
+    else current.add(field);
+    roles[roleIndex] = {
+      ...role,
+      endpoints: { ...role.endpoints, [epName]: [...current] },
+    };
+    patchApp({ rbac: roles });
+  }
+
+  function addValidation() {
+    if (!endpoint) return;
+    const field = endpoint.fields[0] ?? "id";
+    const next: FieldValidation = { field, format: "email" };
+    updateEndpoint({ validations: [...(endpoint.validations ?? []), next] });
+  }
+
+  function updateValidation(index: number, patch: Partial<FieldValidation>) {
+    if (!endpoint) return;
+    const list = [...(endpoint.validations ?? [])];
+    if (!list[index]) return;
+    list[index] = { ...list[index], ...patch };
+    updateEndpoint({ validations: list });
+  }
+
+  function removeValidation(index: number) {
+    if (!endpoint) return;
+    updateEndpoint({
+      validations: (endpoint.validations ?? []).filter((_, i) => i !== index),
     });
   }
 
@@ -580,9 +729,14 @@ export function StudioShell({
   }
 
   const parentTableName = selected?.name ?? endpoint?.table ?? null;
+  const parentTable =
+    tables.find((t) => t.name === (endpoint?.table ?? parentTableName)) ??
+    tables.find((t) => t.name === parentTableName) ??
+    null;
   const childTables = parentTableName
     ? tables.filter((t) => t.foreign_keys.some((fk) => fk.ref_table === parentTableName))
     : [];
+  const parentForeignKeys = parentTable?.foreign_keys ?? [];
 
   return (
     <div
@@ -1279,7 +1433,7 @@ export function StudioShell({
                         checked={endpoint.parquet_export ?? false}
                         onChange={(e) => updateEndpoint({ parquet_export: e.target.checked })}
                       />
-                      Parquet export
+                      Parquet export (requires pyarrow)
                     </label>
                   </div>
                 </div>
@@ -1287,6 +1441,7 @@ export function StudioShell({
 
               {editorTab === "security" && (
                 <div className={styles.editorBlock}>
+                  <h3>Endpoint access</h3>
                   <label>
                     Required roles (comma-separated)
                     <input
@@ -1355,38 +1510,149 @@ export function StudioShell({
                     </label>
                   </div>
                   {endpoint.row_level && (
-                    <label>
-                      JWT claim for row-level
-                      <input
-                        value={endpoint.row_level.claim}
-                        onChange={(e) =>
-                          updateEndpoint({
-                            row_level: { ...endpoint.row_level!, claim: e.target.value },
-                          })
-                        }
-                      />
-                    </label>
+                    <div className={styles.twoCol}>
+                      <label>
+                        JWT claim for row-level
+                        <input
+                          value={endpoint.row_level.claim}
+                          onChange={(e) =>
+                            updateEndpoint({
+                              row_level: { ...endpoint.row_level!, claim: e.target.value },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className={styles.check}>
+                        <input
+                          type="checkbox"
+                          checked={endpoint.row_level.required}
+                          onChange={(e) =>
+                            updateEndpoint({
+                              row_level: {
+                                ...endpoint.row_level!,
+                                required: e.target.checked,
+                              },
+                            })
+                          }
+                        />
+                        Require claim
+                      </label>
+                    </div>
                   )}
-                  <label>
-                    Validation (email field, optional)
-                    <input
-                      value={
-                        endpoint.validations?.find((v) => v.format === "email")?.field ?? ""
-                      }
-                      onChange={(e) => {
-                        const field = e.target.value.trim();
-                        const rest = (endpoint.validations ?? []).filter(
-                          (v) => v.format !== "email",
-                        );
-                        updateEndpoint({
-                          validations: field
-                            ? [...rest, { field, format: "email", min_length: 5 }]
-                            : rest,
-                        });
-                      }}
-                      placeholder="email"
-                    />
-                  </label>
+
+                  <h3>Field validations</h3>
+                  <p className={styles.hint}>
+                    Extra checks on write payloads (format, length, range). Applied in addition to DB
+                    constraints.
+                  </p>
+                  {(endpoint.validations ?? []).map((v, idx) => (
+                    <div key={idx} className={styles.relCard}>
+                      <div className={styles.twoCol}>
+                        <label>
+                          Field
+                          <select
+                            value={v.field}
+                            onChange={(e) => updateValidation(idx, { field: e.target.value })}
+                          >
+                            {endpoint.fields.map((f) => (
+                              <option key={f} value={f}>
+                                {f}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Format
+                          <select
+                            value={v.format ?? ""}
+                            onChange={(e) =>
+                              updateValidation(idx, { format: e.target.value || null })
+                            }
+                          >
+                            <option value="">(none)</option>
+                            {VALIDATION_FORMATS.map((f) => (
+                              <option key={f} value={f}>
+                                {f}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <div className={styles.twoCol}>
+                        <label>
+                          Min length
+                          <input
+                            type="number"
+                            value={v.min_length ?? ""}
+                            onChange={(e) =>
+                              updateValidation(idx, {
+                                min_length: e.target.value === "" ? null : Number(e.target.value),
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Max length
+                          <input
+                            type="number"
+                            value={v.max_length ?? ""}
+                            onChange={(e) =>
+                              updateValidation(idx, {
+                                max_length: e.target.value === "" ? null : Number(e.target.value),
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <div className={styles.twoCol}>
+                        <label>
+                          ≥ (ge)
+                          <input
+                            type="number"
+                            value={v.ge ?? ""}
+                            onChange={(e) =>
+                              updateValidation(idx, {
+                                ge: e.target.value === "" ? null : Number(e.target.value),
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          ≤ (le)
+                          <input
+                            type="number"
+                            value={v.le ?? ""}
+                            onChange={(e) =>
+                              updateValidation(idx, {
+                                le: e.target.value === "" ? null : Number(e.target.value),
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <label>
+                        Pattern (regex)
+                        <input
+                          value={v.pattern ?? ""}
+                          onChange={(e) =>
+                            updateValidation(idx, { pattern: e.target.value || null })
+                          }
+                          placeholder="^[A-Z].*"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className={styles.dangerBtn}
+                        onClick={() => removeValidation(idx)}
+                      >
+                        Remove rule
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" className={styles.secondary} onClick={addValidation}>
+                    + Add validation
+                  </button>
+
                   <div className={styles.twoCol}>
                     <label>
                       Deprecation sunset (YYYY-MM-DD)
@@ -1434,47 +1700,202 @@ export function StudioShell({
                       placeholder="127.0.0.1, 10.0.0."
                     />
                   </label>
-                  <label>
-                    Webhook URL (optional, fires on writes)
-                    <input
-                      value={spec.app.webhooks?.[0]?.url ?? ""}
-                      onChange={(e) => {
-                        const url = e.target.value.trim();
-                        if (!url) {
-                          patchApp({ webhooks: [] });
-                          return;
-                        }
-                        patchApp({
-                          webhooks: [
-                            {
-                              url,
-                              events: ["create", "update", "delete"],
-                              secret: spec.app.webhooks?.[0]?.secret ?? "",
-                              timeout_seconds: 3,
-                            },
-                          ],
-                        });
-                      }}
-                      placeholder="https://webhook.site/..."
-                    />
-                  </label>
-                  <label>
-                    Webhook HMAC secret
-                    <input
-                      value={spec.app.webhooks?.[0]?.secret ?? ""}
-                      onChange={(e) => {
-                        const hooks = spec.app.webhooks ?? [];
-                        if (!hooks[0]) return;
-                        patchApp({
-                          webhooks: [{ ...hooks[0], secret: e.target.value }],
-                        });
-                      }}
-                    />
-                  </label>
+
+                  <h3>JWT config</h3>
                   <p className={styles.hint}>
-                    App-level RBAC field matrix lives in YAML (`app.rbac`). Data key for try-it:{" "}
-                    <code>{getDataApiKey()}</code>
+                    Used when app auth is <code>jwt</code>. Signing secret stays in env{" "}
+                    <code>JWT_SECRET</code> — never in YAML.
                   </p>
+                  <div className={styles.twoCol}>
+                    <label>
+                      Issuer
+                      <input
+                        value={spec.app.jwt?.issuer ?? "contractapi"}
+                        onChange={(e) =>
+                          patchApp({
+                            jwt: { ...(spec.app.jwt ?? emptyJwt()), issuer: e.target.value },
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Audience
+                      <input
+                        value={spec.app.jwt?.audience ?? "contractapi-clients"}
+                        onChange={(e) =>
+                          patchApp({
+                            jwt: { ...(spec.app.jwt ?? emptyJwt()), audience: e.target.value },
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className={styles.twoCol}>
+                    <label>
+                      Algorithm
+                      <select
+                        value={spec.app.jwt?.algorithm ?? "HS256"}
+                        onChange={(e) =>
+                          patchApp({
+                            jwt: { ...(spec.app.jwt ?? emptyJwt()), algorithm: e.target.value },
+                          })
+                        }
+                      >
+                        <option value="HS256">HS256</option>
+                        <option value="HS384">HS384</option>
+                        <option value="HS512">HS512</option>
+                      </select>
+                    </label>
+                    <label>
+                      Access TTL (minutes)
+                      <input
+                        type="number"
+                        min={1}
+                        max={1440}
+                        value={spec.app.jwt?.access_ttl_minutes ?? 15}
+                        onChange={(e) =>
+                          patchApp({
+                            jwt: {
+                              ...(spec.app.jwt ?? emptyJwt()),
+                              access_ttl_minutes: Number(e.target.value) || 15,
+                            },
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    Refresh TTL (days)
+                    <input
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={spec.app.jwt?.refresh_ttl_days ?? 7}
+                      onChange={(e) =>
+                        patchApp({
+                          jwt: {
+                            ...(spec.app.jwt ?? emptyJwt()),
+                            refresh_ttl_days: Number(e.target.value) || 7,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+
+                  <h3>Webhooks</h3>
+                  <p className={styles.hint}>
+                    POST JSON on writes. Signature header <code>X-Contractapi-Signature</code> when
+                    secret is set.
+                  </p>
+                  {(spec.app.webhooks ?? []).map((wh, idx) => (
+                    <div key={idx} className={styles.relCard}>
+                      <label>
+                        URL
+                        <input
+                          value={wh.url}
+                          onChange={(e) => patchWebhook(idx, { url: e.target.value })}
+                          placeholder="https://hooks.example.com/contractapi"
+                        />
+                      </label>
+                      <div className={styles.toggleRow}>
+                        {WEBHOOK_EVENTS.map((ev) => (
+                          <label key={ev} className={styles.check}>
+                            <input
+                              type="checkbox"
+                              checked={(wh.events ?? []).includes(ev)}
+                              onChange={(e) => {
+                                const set = new Set(wh.events ?? []);
+                                if (e.target.checked) set.add(ev);
+                                else set.delete(ev);
+                                patchWebhook(idx, { events: [...set] });
+                              }}
+                            />
+                            {ev}
+                          </label>
+                        ))}
+                      </div>
+                      <div className={styles.twoCol}>
+                        <label>
+                          HMAC secret
+                          <input
+                            value={wh.secret ?? ""}
+                            onChange={(e) => patchWebhook(idx, { secret: e.target.value })}
+                          />
+                        </label>
+                        <label>
+                          Timeout (s)
+                          <input
+                            type="number"
+                            min={0.5}
+                            max={30}
+                            step={0.5}
+                            value={wh.timeout_seconds ?? 3}
+                            onChange={(e) =>
+                              patchWebhook(idx, {
+                                timeout_seconds: Number(e.target.value) || 3,
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <button
+                        type="button"
+                        className={styles.dangerBtn}
+                        onClick={() => removeWebhook(idx)}
+                      >
+                        Remove webhook
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" className={styles.secondary} onClick={addWebhook}>
+                    + Add webhook
+                  </button>
+
+                  <h3>RBAC field matrix</h3>
+                  <p className={styles.hint}>
+                    Per-role allowlists of response fields. Empty matrix = no extra filtering. Data
+                    key for try-it: <code>{getDataApiKey()}</code>
+                  </p>
+                  {(spec.app.rbac ?? []).map((role, idx) => (
+                    <div key={idx} className={styles.relCard}>
+                      <div className={styles.settingsHead}>
+                        <label>
+                          Role
+                          <input
+                            value={role.role}
+                            onChange={(e) => updateRbacRole(idx, { role: e.target.value })}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className={styles.dangerBtn}
+                          onClick={() => removeRbacRole(idx)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      {spec.endpoints.map((ep) => (
+                        <div key={ep.name}>
+                          <strong>{ep.name}</strong>
+                          <div className={styles.toggleRow}>
+                            {ep.fields.map((f) => (
+                              <label key={f} className={styles.check}>
+                                <input
+                                  type="checkbox"
+                                  checked={(role.endpoints[ep.name] ?? []).includes(f)}
+                                  onChange={() => toggleRbacField(idx, ep.name, f)}
+                                />
+                                {f}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <button type="button" className={styles.secondary} onClick={addRbacRole}>
+                    + Add RBAC role
+                  </button>
                 </div>
               )}
 
@@ -1485,20 +1906,19 @@ export function StudioShell({
                   ) : (
                     <>
                       <p className={styles.hint}>
-                        Nested arrays in the JSON response. Pick a child table that has a foreign key
-                        to <strong>{parentTableName ?? endpoint.table}</strong>. After Activate, each
-                        parent row includes that array automatically (no extra query param).
+                        Nested arrays/objects in the JSON response. One-to-many: child table FK →{" "}
+                        <strong>{parentTableName ?? endpoint.table}</strong>. Many-to-one: parent FK
+                        → related table. Loaded in batch after Activate (no extra query param).
                       </p>
                       <pre className={styles.yaml}>
                         {`{
   "id": "…",
   "email": "…",
-  "orders": [          // ← relation name
-    { "id": "…", "total": 42 }
-  ]
+  "orders": [ { "id": "…", "total": 42 } ],
+  "account": { "id": "…", "name": "…" }
 }`}
                       </pre>
-                      <h3>Add nested array from FK child</h3>
+                      <h3>Add one-to-many (nested array)</h3>
                       <div className={styles.rowGap}>
                         {childTables.map((c) => (
                           <button
@@ -1517,28 +1937,152 @@ export function StudioShell({
                           </span>
                         )}
                       </div>
-                      <h3>Active relations</h3>
-                      <ul className={styles.relList}>
-                        {(endpoint.relations ?? []).map((r) => (
-                          <li key={r.name}>
-                            <code>
-                              {r.name}[] ← {r.schema}.{r.table} ({r.foreign_key} → {r.local_key}) ·{" "}
-                              {r.fields.length} fields
-                            </code>
-                            <button
-                              type="button"
-                              className={styles.dangerBtn}
-                              aria-label={`Remove relation ${r.name}`}
-                              onClick={() => removeRelation(r.name)}
-                            >
-                              ×
-                            </button>
-                          </li>
+                      <h3>Add many-to-one (nested object)</h3>
+                      <div className={styles.rowGap}>
+                        {parentForeignKeys.map((fk) => (
+                          <button
+                            key={`${fk.column}-${fk.ref_table}`}
+                            type="button"
+                            className={styles.secondary}
+                            onClick={() => addManyToOne(fk)}
+                          >
+                            + {fk.column} → {fk.ref_table}
+                          </button>
                         ))}
-                        {(endpoint.relations ?? []).length === 0 && (
-                          <li className={styles.empty}>No nested arrays yet.</li>
+                        {parentForeignKeys.length === 0 && (
+                          <span className={styles.empty}>
+                            No outbound FKs on this table.
+                          </span>
                         )}
-                      </ul>
+                      </div>
+                      <h3>Active relations</h3>
+                      {(endpoint.relations ?? []).length === 0 && (
+                        <p className={styles.empty}>No nested relations yet.</p>
+                      )}
+                      {(endpoint.relations ?? []).map((r) => {
+                        const relTable =
+                          tables.find((t) => t.name === r.table && t.schema === r.schema) ??
+                          tables.find((t) => t.name === r.table);
+                        const relCols = relTable?.columns.map((c) => c.name) ?? r.fields;
+                        return (
+                          <div key={r.name} className={styles.relCard}>
+                            <div className={styles.settingsHead}>
+                              <code>
+                                {r.name}
+                                {r.type === "one_to_many" ? "[]" : ""} ← {r.schema}.{r.table}
+                              </code>
+                              <button
+                                type="button"
+                                className={styles.dangerBtn}
+                                aria-label={`Remove relation ${r.name}`}
+                                onClick={() => removeRelation(r.name)}
+                              >
+                                ×
+                              </button>
+                            </div>
+                            <div className={styles.twoCol}>
+                              <label>
+                                Name
+                                <input
+                                  value={r.name}
+                                  onChange={(e) => {
+                                    const next = slugify(e.target.value);
+                                    if (!next) return;
+                                    if (
+                                      next !== r.name &&
+                                      (endpoint.relations ?? []).some((x) => x.name === next)
+                                    ) {
+                                      setStatus(null, `Relation '${next}' already exists.`);
+                                      return;
+                                    }
+                                    updateRelation(r.name, { name: next });
+                                  }}
+                                />
+                              </label>
+                              <label>
+                                Type
+                                <select
+                                  value={r.type}
+                                  onChange={(e) =>
+                                    updateRelation(r.name, {
+                                      type: e.target.value as RelationDraft["type"],
+                                      max_per_parent:
+                                        e.target.value === "many_to_one"
+                                          ? 1
+                                          : Math.max(r.max_per_parent, 2),
+                                    })
+                                  }
+                                >
+                                  <option value="one_to_many">one_to_many</option>
+                                  <option value="many_to_one">many_to_one</option>
+                                </select>
+                              </label>
+                            </div>
+                            <div className={styles.twoCol}>
+                              <label>
+                                Local key
+                                <input
+                                  value={r.local_key}
+                                  onChange={(e) =>
+                                    updateRelation(r.name, { local_key: e.target.value })
+                                  }
+                                />
+                              </label>
+                              <label>
+                                Foreign key
+                                <input
+                                  value={r.foreign_key}
+                                  onChange={(e) =>
+                                    updateRelation(r.name, { foreign_key: e.target.value })
+                                  }
+                                />
+                              </label>
+                            </div>
+                            <div className={styles.twoCol}>
+                              <label>
+                                Primary key
+                                <input
+                                  value={r.primary_key}
+                                  onChange={(e) =>
+                                    updateRelation(r.name, { primary_key: e.target.value })
+                                  }
+                                />
+                              </label>
+                              <label>
+                                Max per parent
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={500}
+                                  value={r.max_per_parent}
+                                  disabled={r.type === "many_to_one"}
+                                  onChange={(e) =>
+                                    updateRelation(r.name, {
+                                      max_per_parent: Math.min(
+                                        500,
+                                        Math.max(1, Number(e.target.value) || 1),
+                                      ),
+                                    })
+                                  }
+                                />
+                              </label>
+                            </div>
+                            <p className={styles.hint}>Fields returned on the nested resource</p>
+                            <div className={styles.toggleRow}>
+                              {relCols.map((f) => (
+                                <label key={f} className={styles.check}>
+                                  <input
+                                    type="checkbox"
+                                    checked={r.fields.includes(f)}
+                                    onChange={() => toggleRelationField(r.name, f)}
+                                  />
+                                  {f}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </>
                   )}
                 </div>

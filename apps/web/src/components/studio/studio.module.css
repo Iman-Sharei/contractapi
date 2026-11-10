@@ -618,6 +618,15 @@
   background: white;
 }
 
+.relCard {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
 .dangerBtn {
   border: 1px solid #fecaca;
   background: #fff1f2;

@@ -2,18 +2,19 @@
 
 **Maturity:** Beta `0.5.0` — see [STABILITY.md](STABILITY.md).
 
-## Experimental (enabled via `DATAAPI_EXPERIMENTAL`)
+## Experimental (enabled via `CONTRACTAPI_EXPERIMENTAL` / `DATAAPI_EXPERIMENTAL`)
 
 | Feature | Flag |
 |---------|------|
 | GraphQL facade | `graphql` |
 | DuckDB driver | `duckdb` |
-| Parquet export | `parquet` |
 | Studio OIDC | `oidc` |
 | Redis job queue | `queue` |
 | Multi-active `/apis/{name}` | `multi_active` |
 
 Default: `all`.
+
+**GA (no experimental flag):** Parquet list export (`parquet_export` / `?format=parquet`) when `pyarrow` is installed (`pip install 'contractapi[parquet]'`).
 
 ## Nice-to-have later (not blocking Beta)
 

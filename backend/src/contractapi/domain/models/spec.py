@@ -218,7 +218,7 @@ class EndpointSpec(BaseModel):
     # When true, list endpoints also honor Accept: text/csv | application/x-ndjson | parquet
     csv_export: bool = True
     ndjson_export: bool = True
-    parquet_export: bool = False  # requires optional extra: pip install contractapi[parquet]
+    parquet_export: bool = False  # GA; requires optional extra: pip install contractapi[parquet]
 
     model_config = {"populate_by_name": True}
 
