@@ -24,7 +24,7 @@ def _engine_from_payload(payload: dict[str, Any]):
 
 
 def handle_insert(payload: dict[str, Any]) -> dict[str, Any]:
-    from contractapi.application import data_api_builder as dab
+    from contractapi.application.data_api import write_support as dab
 
     engine = _engine_from_payload(payload)
     metadata = MetaData()

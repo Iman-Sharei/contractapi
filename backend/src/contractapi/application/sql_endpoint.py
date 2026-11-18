@@ -202,8 +202,8 @@ def mount_sql_endpoint(
     endpoint: EndpointSpec,
     spec: ApiSpec,
 ) -> None:
-    # Lazy import to avoid circular dependency with data_api_builder.
-    from contractapi.application import data_api_builder as dab
+    # Lazy import to avoid a circular dependency with the data_api package.
+    from contractapi.application.data_api import common as dab
 
     tags = [endpoint.name]
     max_limit = endpoint.pagination.max_limit

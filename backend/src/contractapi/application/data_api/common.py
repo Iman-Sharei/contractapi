@@ -1,0 +1,353 @@
+"""Shared helpers for generated data-plane endpoints (serialization, RBAC fields, ETags, audit, cache)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+from fastapi import Request
+from fastapi.responses import JSONResponse, Response
+from sqlalchemy import Table, select
+from sqlalchemy.engine import Engine
+
+from contractapi.application.query_filters import combine
+from contractapi.application.row_security import apply_security_clauses
+from contractapi.core.errors import (
+    AppError,
+)
+from contractapi.core.logging import get_logger
+from contractapi.domain.models.spec import (
+    ApiSpec,
+    EndpointSpec,
+    PaginationMode,
+)
+from contractapi.infrastructure.audit import audit_event
+from contractapi.infrastructure.cache_store import response_cache
+from contractapi.infrastructure.observability import metrics
+from contractapi.infrastructure.security.auth import (
+    enforce_endpoint_roles,
+)
+
+logger = get_logger("contractapi.data")
+
+
+_SQLA_TO_PY: dict[str, type] = {
+    "INTEGER": int,
+    "BIGINT": int,
+    "SMALLINT": int,
+    "NUMERIC": float,
+    "DECIMAL": float,
+    "REAL": float,
+    "DOUBLE": float,
+    "FLOAT": float,
+    "BOOLEAN": bool,
+    "TEXT": str,
+    "VARCHAR": str,
+    "CHAR": str,
+    "UUID": str,
+    "DATE": date,
+    "TIMESTAMP": datetime,
+    "DATETIME": datetime,
+    "JSON": dict,
+    "JSONB": dict,
+}
+
+
+def _python_type(sa_type: Any) -> type:
+    key = type(sa_type).__name__.upper()
+    text = str(sa_type).upper()
+    for token, py in _SQLA_TO_PY.items():
+        if token in key or token in text:
+            return py
+    return str
+
+
+def _serialize(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, list):
+        return [_serialize(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _serialize(v) for k, v in value.items()}
+    return value
+
+
+def _row_to_dict(row: Any, fields: list[str]) -> dict[str, Any]:
+    mapping = dict(row._mapping) if hasattr(row, "_mapping") else dict(row)
+    return {f: _serialize(mapping.get(f)) for f in fields}
+
+
+def _select_relations(endpoint: EndpointSpec, include: str | None):
+    """Pick relations to embed. omit/None/* → all; empty → none; else comma names."""
+    if not endpoint.relations:
+        return []
+    if include is None:
+        return list(endpoint.relations)
+    raw = include.strip()
+    if raw in {"", "0", "false", "none"}:
+        return []
+    if raw == "*":
+        return list(endpoint.relations)
+    wanted = {p.strip() for p in raw.split(",") if p.strip()}
+    selected = [r for r in endpoint.relations if r.name in wanted]
+    unknown = sorted(wanted - {r.name for r in endpoint.relations})
+    if unknown:
+        raise AppError(
+            type_="https://contractapi.dev/problems/invalid-include",
+            title="Unknown relation",
+            status=400,
+            detail="One or more include/expand names are not configured on this endpoint.",
+            extensions={
+                "allowed": [r.name for r in endpoint.relations],
+                "rejected": unknown,
+            },
+        )
+    return selected
+
+
+def _project_fields(item: dict[str, Any], fields: list[str], relation_names: list[str]) -> dict[str, Any]:
+    out = {k: item[k] for k in fields if k in item}
+    for name in relation_names:
+        if name in item:
+            out[name] = item[name]
+    return out
+
+
+def _json_response(
+    content: Any,
+    *,
+    status_code: int = 200,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    return JSONResponse(_serialize(content), status_code=status_code, headers=headers or {})
+
+
+def _bind_path_type(handler: Any, param: str, typ: type) -> None:
+    """`from __future__ import annotations` stringifies local aliases like pk_type; bind the real type."""
+    handler.__annotations__[param] = typ
+
+
+def _job_owner(spec: ApiSpec, request: Request) -> str:
+    principal = getattr(request.state, "principal", {}) or {}
+    return f"{spec.namespace}:{principal.get('sub') or 'anon'}"
+
+
+def _ensure_trace(request: Request) -> str:
+    incoming = request.headers.get("traceparent") or request.headers.get("X-Trace-Id")
+    if incoming and "traceparent" in (request.headers.keys() if False else []):
+        pass
+    trace_id = request.headers.get("X-Trace-Id")
+    if not trace_id and request.headers.get("traceparent"):
+        # W3C: version-traceid-spanid-flags
+        parts = request.headers.get("traceparent", "").split("-")
+        if len(parts) >= 2:
+            trace_id = parts[1]
+    if not trace_id:
+        trace_id = uuid.uuid4().hex
+    request.state.trace_id = trace_id
+    return trace_id
+
+
+def _decorate_response(response: Response, spec: ApiSpec, trace_id: str, rate_info: Any) -> None:
+    response.headers.setdefault("X-Trace-Id", trace_id)
+    if rate_info is not None:
+        response.headers.setdefault("X-RateLimit-Limit", str(rate_info.limit))
+        response.headers.setdefault("X-RateLimit-Remaining", str(rate_info.remaining))
+        response.headers.setdefault("X-RateLimit-Reset", str(rate_info.reset_seconds))
+    dep = spec.app.deprecation
+    if dep.deprecated:
+        response.headers.setdefault("Deprecation", "true")
+        if dep.sunset:
+            response.headers.setdefault("Sunset", dep.sunset)
+        link_parts: list[str] = []
+        existing = response.headers.get("Link")
+        if existing:
+            link_parts.append(existing)
+        if dep.link:
+            link_parts.append(f'<{dep.link}>; rel="deprecation"')
+        if dep.successor:
+            link_parts.append(f'<{dep.successor}>; rel="successor-version"')
+        if link_parts:
+            response.headers["Link"] = ", ".join(link_parts)
+
+
+def _effective_path(request: Request) -> str:
+    path = request.scope.get("path") or request.url.path
+    # When mounted under /data without clean stripping, normalize.
+    if path == "/data":
+        return "/"
+    if path.startswith("/data/"):
+        return path[len("/data") :]
+    return path
+
+
+def _is_public_path(path: str, public_paths: set[str]) -> bool:
+    if path in public_paths:
+        return True
+    # also allow trailing-slash variants
+    if path.endswith("/") and path[:-1] in public_paths:
+        return True
+    return False
+
+
+def _record_metrics(method: str, path: str, status: int, duration: float) -> None:
+    labels = {"method": method, "path": path, "status": str(status)}
+    metrics.incr("contractapi_http_requests_total", labels=labels)
+    metrics.observe("contractapi_http_request_duration_seconds", duration, labels={"method": method, "path": path})
+
+
+def _model_name(name: str) -> str:
+    return "".join(part.title() for part in name.split("_"))
+
+
+def _cache_prefix(spec: ApiSpec, endpoint: EndpointSpec) -> str:
+    # Namespaced per contract so two active APIs never share entries.
+    return f"ep:{spec.namespace}:{endpoint.name}:"
+
+
+def _row_scope(endpoint: EndpointSpec, request: Request) -> str:
+    """Cache/idempotency scope for row-level endpoints: the caller's claim value."""
+    cfg = endpoint.row_level
+    if not cfg:
+        return ""
+    principal = getattr(request.state, "principal", {}) or {}
+    value = (principal.get("claims") or {}).get(cfg.claim)
+    if value is None:
+        value = principal.get(cfg.claim)
+    return f"rl={json.dumps(value, default=str)}:"
+
+
+def _invalidate_endpoint_cache(spec: ApiSpec, endpoint: EndpointSpec) -> None:
+    response_cache.invalidate_prefix(_cache_prefix(spec, endpoint))
+
+
+def _rbac_fields(spec: ApiSpec, endpoint: EndpointSpec, request: Request) -> list[str]:
+    """Endpoint role gate + the fields this caller's roles may see (reads, writes, filters)."""
+    principal = getattr(request.state, "principal", {"roles": []})
+    enforce_endpoint_roles(principal, endpoint.roles)
+    rbac = spec.rbac_fields_for(endpoint.name, list(principal.get("roles") or []))
+    if rbac is None:
+        return list(endpoint.fields)
+    fields = [f for f in endpoint.fields if f in rbac or f == endpoint.primary_key]
+    if endpoint.primary_key in endpoint.fields and endpoint.primary_key not in fields:
+        fields = [endpoint.primary_key, *fields]
+    return fields
+
+
+def _visible_fields(spec: ApiSpec, endpoint: EndpointSpec, request: Request) -> list[str]:
+    fields = _rbac_fields(spec, endpoint, request)
+
+    # Sparse fieldsets: ?fields=id,name (must be subset of allowed)
+    raw = request.query_params.get("fields")
+    if raw:
+        requested = [f.strip() for f in raw.split(",") if f.strip()]
+        allowed = set(fields)
+        bad = [f for f in requested if f not in allowed]
+        if bad:
+            raise AppError(
+                type_="https://contractapi.dev/problems/invalid-fields",
+                title="Invalid fields",
+                status=400,
+                detail="Requested fields are not allowed.",
+                extensions={"allowed": sorted(allowed), "rejected": bad},
+            )
+        # keep PK for identity
+        if endpoint.primary_key in allowed and endpoint.primary_key not in requested:
+            requested = [endpoint.primary_key, *requested]
+        fields = requested
+    return fields
+
+
+def _etag_for(item: dict[str, Any], endpoint: EndpointSpec) -> str:
+    if endpoint.etag_field and endpoint.etag_field in item:
+        raw = f"{endpoint.name}:{item.get(endpoint.primary_key)}:{item.get(endpoint.etag_field)}"
+    else:
+        raw = json.dumps(item, sort_keys=True, default=str)
+    return '"' + hashlib.sha256(raw.encode()).hexdigest()[:16] + '"'
+
+
+def _check_if_match(request: Request, etag: str) -> None:
+    if_match = request.headers.get("If-Match")
+    if not if_match:
+        return
+    candidates = [p.strip() for p in if_match.split(",")]
+    if etag not in candidates and "*" not in candidates:
+        raise AppError(
+            type_="https://contractapi.dev/problems/precondition-failed",
+            title="Precondition Failed",
+            status=412,
+            detail="If-Match does not match current ETag.",
+            extensions={"etag": etag},
+        )
+
+
+def _check_if_none_match(request: Request, etag: str) -> bool:
+    """Return True if client already has matching representation (304)."""
+    if_none = request.headers.get("If-None-Match")
+    if not if_none:
+        return False
+    return etag in [p.strip() for p in if_none.split(",")]
+
+
+def _pagination_link_header(
+    request: Request,
+    *,
+    mode: PaginationMode,
+    limit: int,
+    offset: int,
+    total: int | None,
+    next_cursor: str | None,
+) -> str | None:
+    links: list[str] = []
+    if mode == PaginationMode.CURSOR:
+        if next_cursor:
+            next_url = str(request.url.include_query_params(cursor=next_cursor, limit=limit))
+            links.append(f'<{next_url}>; rel="next"')
+    else:
+        if total is not None and offset + limit < total:
+            next_url = str(request.url.include_query_params(offset=offset + limit, limit=limit))
+            links.append(f'<{next_url}>; rel="next"')
+        if offset > 0:
+            prev = max(0, offset - limit)
+            prev_url = str(request.url.include_query_params(offset=prev, limit=limit))
+            links.append(f'<{prev_url}>; rel="prev"')
+    return ", ".join(links) if links else None
+
+
+def _fetch_row(
+    engine: Engine,
+    table: Table,
+    endpoint: EndpointSpec,
+    request: Request,
+    item_id: Any,
+) -> dict[str, Any] | None:
+    pk = endpoint.primary_key
+    clauses = apply_security_clauses([table.c[pk] == item_id], table, endpoint, request)
+    stmt = select(*(table.c[f] for f in endpoint.fields)).where(combine(clauses))
+    with engine.connect() as conn:
+        row = conn.execute(stmt).fetchone()
+    if row is None:
+        return None
+    return _row_to_dict(row, endpoint.fields)
+
+
+def _audit(spec: ApiSpec, action: str, endpoint: EndpointSpec, request: Request, **kwargs: Any) -> None:
+    if not spec.app.audit_enabled:
+        return
+    audit_event(
+        action=action,
+        endpoint=endpoint.name,
+        principal=getattr(request.state, "principal", None),
+        **kwargs,
+    )
+
+
