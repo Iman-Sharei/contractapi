@@ -2,36 +2,28 @@
 
 from __future__ import annotations
 
-import csv
-import io
-import json
-import re
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import Response
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from contractapi.application.cursor_paging import decode_cursor, encode_cursor
-from contractapi.application.query_filters import escape_like
+from contractapi.application.exports import (
+    _csv_response,
+    _ndjson_response,
+    _parquet_response,
+)
+from contractapi.application.sql_filters import (
+    _build_where,
+    _quote_ident,
+    bind_sql_params,
+)
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, EndpointSpec, PaginationMode
 from contractapi.infrastructure.db.errors import db_error
-
-_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-
-
-def _quote_ident(name: str) -> str:
-    if not _IDENT.match(name):
-        raise AppError(
-            type_="https://contractapi.dev/problems/misconfigured",
-            title="Misconfigured",
-            status=500,
-            detail=f"Unsafe identifier: {name}",
-        )
-    return f'"{name}"'
 
 
 def begin_read_only(conn: Any) -> None:
@@ -44,155 +36,6 @@ def begin_read_only(conn: Any) -> None:
 
 def _inner_sql(endpoint: EndpointSpec) -> str:
     return (endpoint.sql or "").strip().rstrip(";").strip()
-
-
-def _build_where(
-    request: Request,
-    endpoint: EndpointSpec,
-    *,
-    reserved: set[str],
-) -> tuple[str, dict[str, Any]]:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    allowed_fields = set(endpoint.filters)
-    allowed_ops = set(endpoint.filter_operators)
-    idx = 0
-    for key, value in request.query_params.multi_items():
-        if key in reserved:
-            continue
-        if "__" in key:
-            field, op = key.rsplit("__", 1)
-        else:
-            field, op = key, "eq"
-        if field not in allowed_fields or op not in allowed_ops:
-            raise AppError(
-                type_="https://contractapi.dev/problems/invalid-filter",
-                title="Filter not allowed",
-                status=400,
-                detail="Only configured filter fields/operators are accepted.",
-                extensions={"rejected": key},
-            )
-        col = f"q.{_quote_ident(field)}"
-        pname = f"p{idx}"
-        idx += 1
-        if op == "eq":
-            clauses.append(f"{col} = :{pname}")
-            params[pname] = value
-        elif op == "ne":
-            clauses.append(f"{col} <> :{pname}")
-            params[pname] = value
-        elif op == "gt":
-            clauses.append(f"{col} > :{pname}")
-            params[pname] = value
-        elif op == "gte":
-            clauses.append(f"{col} >= :{pname}")
-            params[pname] = value
-        elif op == "lt":
-            clauses.append(f"{col} < :{pname}")
-            params[pname] = value
-        elif op == "lte":
-            clauses.append(f"{col} <= :{pname}")
-            params[pname] = value
-        elif op == "contains":
-            clauses.append(f"CAST({col} AS TEXT) ILIKE :{pname} ESCAPE '\\'")
-            params[pname] = f"%{escape_like(value)}%"
-        elif op == "startswith":
-            clauses.append(f"CAST({col} AS TEXT) ILIKE :{pname} ESCAPE '\\'")
-            params[pname] = f"{escape_like(value)}%"
-        elif op == "in":
-            values = [v for v in value.split(",") if v != ""]
-            placeholders = []
-            for j, v in enumerate(values):
-                pn = f"{pname}_{j}"
-                placeholders.append(f":{pn}")
-                params[pn] = v
-            clauses.append(f"{col} IN ({', '.join(placeholders)})")
-        else:
-            raise AppError(
-                type_="https://contractapi.dev/problems/invalid-filter",
-                title="Filter not allowed",
-                status=400,
-                detail=f"Unknown operator {op}",
-            )
-    if not clauses:
-        return "", params
-    return " WHERE " + " AND ".join(clauses), params
-
-
-def _csv_response(items: list[dict[str, Any]], fields: list[str]) -> PlainTextResponse:
-    buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
-    writer.writeheader()
-    for row in items:
-        writer.writerow({k: row.get(k) for k in fields})
-    return PlainTextResponse(buf.getvalue(), media_type="text/csv; charset=utf-8")
-
-
-def _ndjson_response(items: list[dict[str, Any]], fields: list[str]) -> PlainTextResponse:
-    lines = [json.dumps({k: row.get(k) for k in fields}, default=str) for row in items]
-    return PlainTextResponse("\n".join(lines) + ("\n" if lines else ""), media_type="application/x-ndjson")
-
-
-def _parquet_response(items: list[dict[str, Any]], fields: list[str]) -> Response:
-    """Serialize rows as Apache Parquet (requires optional pyarrow)."""
-    try:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-    except ImportError as exc:
-        raise AppError(
-            type_="https://contractapi.dev/problems/dependency-missing",
-            title="Parquet support not installed",
-            status=501,
-            detail="Install with: pip install 'contractapi[parquet]'",
-        ) from exc
-
-    columns = {f: [row.get(f) for row in items] for f in fields}
-    # Normalize non-Arrow-native values to strings
-    for key, values in columns.items():
-        columns[key] = [v if v is None or isinstance(v, (bool, int, float, str, bytes)) else str(v) for v in values]
-    table = pa.table(columns)
-    sink = io.BytesIO()
-    pq.write_table(table, sink, compression="zstd")
-    return Response(
-        content=sink.getvalue(),
-        media_type="application/vnd.apache.parquet",
-        headers={"Content-Disposition": 'attachment; filename="export.parquet"'},
-    )
-
-
-def bind_sql_params(endpoint: EndpointSpec, request: Request) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for param in endpoint.sql_params:
-        raw = request.query_params.get(param.name)
-        if raw is None or raw == "":
-            if param.required and param.default is None:
-                raise AppError(
-                    type_="https://contractapi.dev/problems/validation-error",
-                    title="Validation failed",
-                    status=422,
-                    detail=f"Missing required SQL param '{param.name}'.",
-                )
-            if param.default is not None:
-                out[param.name] = param.default
-            continue
-        try:
-            if param.type == "int":
-                out[param.name] = int(raw)
-            elif param.type == "float":
-                out[param.name] = float(raw)
-            elif param.type == "bool":
-                out[param.name] = raw.lower() in {"1", "true", "yes", "on"}
-            else:
-                out[param.name] = raw
-        except ValueError as exc:
-            expected = {"int": "an integer (e.g. 42)", "float": "a number (e.g. 9.5)"}[param.type]
-            raise AppError(
-                type_="https://contractapi.dev/problems/validation-error",
-                title="Validation failed",
-                status=422,
-                detail=f"SQL param '{param.name}' must be {expected}.",
-            ) from exc
-    return out
 
 
 def mount_sql_endpoint(

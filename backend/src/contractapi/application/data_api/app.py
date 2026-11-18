@@ -12,27 +12,25 @@ from sqlalchemy.engine import Engine
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from contractapi.application.data_api.common import (
+    logger,
+)
+from contractapi.application.data_api.http_meta import (
     _decorate_response,
     _effective_path,
     _ensure_trace,
     _is_public_path,
     _job_owner,
     _record_metrics,
-    logger,
 )
 from contractapi.application.data_api.reads import (
     _add_detail,
     _add_list,
 )
+from contractapi.application.data_api.updates import _add_delete, _add_update
 from contractapi.application.data_api.write_support import (
     _build_write_models,
 )
-from contractapi.application.data_api.writes import (
-    _add_bulk,
-    _add_create,
-    _add_delete,
-    _add_update,
-)
+from contractapi.application.data_api.writes import _add_bulk, _add_create
 from contractapi.application.jobs import get_job
 from contractapi.core.errors import (
     AppError,

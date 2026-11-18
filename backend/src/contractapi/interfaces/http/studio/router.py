@@ -6,11 +6,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from contractapi.application.data_api_builder import create_data_app
-from contractapi.application.openapi_diff import diff_openapi
 from contractapi.application.studio_service import (
     activate_spec,
     introspect,
@@ -18,117 +17,28 @@ from contractapi.application.studio_service import (
     validate_spec_payload,
 )
 from contractapi.core.errors import AppError
-from contractapi.domain.models.spec import ApiSpec, dump_spec, parse_spec
+from contractapi.domain.models.spec import parse_spec
 from contractapi.infrastructure.db.errors import safe_db_message
-from contractapi.infrastructure.persistence import spec_repo
 from contractapi.infrastructure.security.auth import require_studio_api_key
-from contractapi.infrastructure.security.jwt_tokens import issue_token
+from contractapi.interfaces.http.studio.presenters import (
+    _spec_json,
+    _spec_yaml,
+)
 from contractapi.interfaces.http.studio.schemas import (
-    DiffOpenApiRequest,
     DumpYamlRequest,
     IntrospectRequest,
-    IssueTokenRequest,
     OpenApiPreviewRequest,
-    SaveSpecRequest,
     ServeInfoResponse,
     SqlPreviewRequest,
     ValidateSpecRequest,
     ValidateSpecResponse,
 )
 
-
-def _spec_json(spec: ApiSpec) -> dict[str, Any]:
-    """Spec as returned to clients: literal passwords/secrets masked."""
-    from contractapi.infrastructure.secrets import mask_spec_dict
-
-    return mask_spec_dict(spec.model_dump(by_alias=True, mode="json"))
-
-
-def _spec_yaml(spec: ApiSpec) -> str:
-    return dump_spec(ApiSpec.model_validate(_spec_json(spec)))
-
-
 router = APIRouter(
     prefix="/studio",
     tags=["studio"],
     dependencies=[Depends(require_studio_api_key)],
 )
-
-
-@router.post("/import/dbt")
-def studio_import_dbt(body: dict[str, Any]) -> dict[str, Any]:
-    """Convert dbt schema.yml or manifest.json JSON into endpoint drafts."""
-    from contractapi.application.dbt_import import import_dbt_payload
-
-    payload = body.get("manifest") if "manifest" in body else body.get("schema") or body
-    if payload is None:
-        raise AppError(
-            type_="https://contractapi.dev/problems/validation",
-            title="Validation Error",
-            status=422,
-            detail="Provide dbt schema.yml JSON or manifest.json under 'schema' / 'manifest'.",
-        )
-    return import_dbt_payload(payload)
-
-
-@router.get("/git/status")
-def studio_git_status() -> dict[str, Any]:
-    from contractapi.application.git_browser import GitBrowserError, git_status
-
-    try:
-        return git_status()
-    except GitBrowserError as exc:
-        raise AppError(
-            type_="https://contractapi.dev/problems/bad-request",
-            title="Git error",
-            status=400,
-            detail=str(exc),
-        ) from exc
-
-
-@router.get("/git/branches")
-def studio_git_branches() -> dict[str, Any]:
-    from contractapi.application.git_browser import GitBrowserError, list_branches
-
-    try:
-        return list_branches()
-    except GitBrowserError as exc:
-        raise AppError(
-            type_="https://contractapi.dev/problems/bad-request",
-            title="Git error",
-            status=400,
-            detail=str(exc),
-        ) from exc
-
-
-@router.get("/git/tree")
-def studio_git_tree(ref: str = "HEAD", path: str = "") -> dict[str, Any]:
-    from contractapi.application.git_browser import GitBrowserError, list_tree
-
-    try:
-        return list_tree(ref=ref, path=path)
-    except GitBrowserError as exc:
-        raise AppError(
-            type_="https://contractapi.dev/problems/bad-request",
-            title="Git error",
-            status=400,
-            detail=str(exc),
-        ) from exc
-
-
-@router.get("/git/file")
-def studio_git_file(path: str, ref: str = "HEAD") -> dict[str, Any]:
-    from contractapi.application.git_browser import GitBrowserError, read_file
-
-    try:
-        return read_file(ref=ref, path=path)
-    except GitBrowserError as exc:
-        raise AppError(
-            type_="https://contractapi.dev/problems/bad-request",
-            title="Git error",
-            status=400,
-            detail=str(exc),
-        ) from exc
 
 
 @router.get("/health")
@@ -273,99 +183,6 @@ def studio_preview_openapi(body: OpenApiPreviewRequest) -> dict[str, Any]:
         }
 
 
-@router.get("/specs")
-def studio_list_specs() -> dict[str, Any]:
-    return {"specs": spec_repo.list_specs()}
-
-
-@router.post("/specs")
-def studio_save_spec(body: SaveSpecRequest) -> dict[str, Any]:
-    spec = spec_repo.save_spec(body.name, body.spec)
-    return {
-        "saved": True,
-        "name": body.name,
-        "yaml": _spec_yaml(spec),
-    }
-
-
-@router.get("/specs/{name}")
-def studio_get_spec(name: str) -> dict[str, Any]:
-    spec = spec_repo.read_spec(name)
-    return {
-        "name": name,
-        "spec": _spec_json(spec),
-        "yaml": _spec_yaml(spec),
-    }
-
-
-@router.delete("/specs/{name}")
-def studio_delete_spec(name: str) -> dict[str, bool]:
-    spec_repo.delete_spec(name)
-    return {"deleted": True}
-
-
-@router.get("/specs/{name}/openapi")
-def studio_export_openapi(name: str) -> JSONResponse:
-    spec = spec_repo.read_spec(name)
-    try:
-        doc = spec_repo.export_openapi_dict(spec)
-    except Exception as exc:
-        raise AppError(
-            type_="https://contractapi.dev/problems/database-unreachable",
-            title="Cannot export OpenAPI",
-            status=400,
-            detail=f"The database must be reachable to export OpenAPI: {safe_db_message(exc)}",
-        ) from exc
-    return JSONResponse(doc)
-
-
-@router.get("/specs/{name}/openapi.yaml", response_class=PlainTextResponse)
-def studio_export_openapi_yaml(name: str) -> str:
-    import yaml
-
-    spec = spec_repo.read_spec(name)
-    doc = spec_repo.export_openapi_dict(spec)
-    return yaml.safe_dump(doc, sort_keys=False)
-
-
-@router.post("/openapi/diff")
-def studio_openapi_diff(body: DiffOpenApiRequest) -> dict[str, Any]:
-    """Diff two OpenAPI docs — compatible with swagger-diff-ui style consumers."""
-    return diff_openapi(body.before, body.after)
-
-
-@router.post("/openapi/diff-specs")
-def studio_diff_saved_specs(before: str, after: str) -> dict[str, Any]:
-    before_spec = spec_repo.read_spec(before)
-    after_spec = spec_repo.read_spec(after)
-    before_doc = spec_repo.export_openapi_dict(before_spec)
-    after_doc = spec_repo.export_openapi_dict(after_spec)
-    return diff_openapi(before_doc, after_doc)
-
-
-@router.post("/token")
-def studio_issue_token(body: IssueTokenRequest) -> dict[str, str]:
-    """Mint a JWT for testing data-plane auth=jwt (admin-only; uses the target API's jwt config)."""
-    from contractapi.domain.models.spec import JwtConfig
-
-    target = spec_store.get(body.api) if body.api else spec_store.active
-    if body.api and target is None:
-        raise AppError(
-            type_="https://contractapi.dev/problems/not-found",
-            title="Not Found",
-            status=404,
-            detail=f"No activated API named '{body.api}'. Activate it first.",
-        )
-    token = issue_token(
-        subject=body.sub,
-        roles=body.roles,
-        jwt_cfg=target.app.jwt if target else JwtConfig(),
-        expires_minutes=body.expires_minutes,
-        extra=dict(body.claims) or None,
-    )
-    return {"access_token": token, "token_type": "bearer"}
-
-
 @router.post("/sql-preview")
 def studio_sql_preview(body: SqlPreviewRequest) -> dict[str, Any]:
     """Discover output columns for a custom SELECT (Studio SQL endpoints)."""
@@ -408,134 +225,9 @@ def studio_dump_yaml(body: DumpYamlRequest) -> str:
     return _spec_yaml(spec)
 
 
-@router.get("/keys")
-def studio_list_keys() -> dict[str, Any]:
-    from contractapi.infrastructure.api_keys import list_keys
+# Route groups (registered on the same /studio router, so they share its auth dependency).
+from contractapi.interfaces.http.studio import routes_ops, routes_specs, routes_tools
 
-    return {"keys": list_keys()}
-
-
-@router.post("/keys")
-def studio_create_key(body: dict[str, Any]) -> dict[str, Any]:
-    from contractapi.infrastructure.api_keys import create_key
-
-    name = str(body.get("name") or "default")
-    scopes = list(body.get("scopes") or ["*"])
-    return create_key(name=name, scopes=scopes)
-
-
-@router.delete("/keys/{key_id}")
-def studio_revoke_key(key_id: str) -> dict[str, bool]:
-    from contractapi.infrastructure.api_keys import revoke_key
-
-    ok = revoke_key(key_id)
-    if not ok:
-        raise AppError(
-            type_="https://contractapi.dev/problems/not-found",
-            title="Not Found",
-            status=404,
-            detail=f"Key {key_id} not found or already revoked",
-        )
-    return {"revoked": True}
-
-
-@router.get("/audit")
-def studio_audit(limit: int = 100) -> dict[str, Any]:
-    from contractapi.infrastructure.audit import recent_events
-
-    return {"events": recent_events(limit=min(max(limit, 1), 500))}
-
-
-@router.get("/specs/{name}/history")
-def studio_spec_history(name: str) -> dict[str, Any]:
-    return {"name": name, "snapshots": spec_repo.list_snapshots(name)}
-
-
-@router.get("/specs/{name}/history/{snapshot_id}")
-def studio_spec_snapshot(name: str, snapshot_id: str) -> dict[str, Any]:
-    spec = spec_repo.read_snapshot(name, snapshot_id)
-    return {
-        "name": name,
-        "snapshot_id": snapshot_id,
-        "spec": _spec_json(spec),
-        "yaml": _spec_yaml(spec),
-    }
-
-
-@router.post("/specs/{name}/history/{snapshot_id}/restore")
-def studio_restore_snapshot(name: str, snapshot_id: str) -> dict[str, Any]:
-    """Restore a historical snapshot over the current saved spec (snapshots again first)."""
-    snap = spec_repo.read_snapshot(name, snapshot_id)
-    saved = spec_repo.save_spec(name, snap.model_dump(by_alias=True, mode="json"))
-    return {
-        "restored": True,
-        "name": name,
-        "snapshot_id": snapshot_id,
-        "yaml": _spec_yaml(saved),
-    }
-
-
-@router.post("/specs/{name}/promote")
-def studio_promote(name: str, body: dict[str, Any]) -> dict[str, Any]:
-    env = str(body.get("environment") or "staging")
-    if env not in {"development", "staging", "production"}:
-        raise AppError(
-            type_="https://contractapi.dev/problems/validation-error",
-            title="Validation failed",
-            status=422,
-            detail="environment must be development|staging|production",
-        )
-    spec = spec_repo.promote_spec(name, environment=env)
-    return {
-        "promoted": True,
-        "environment": env,
-        "name": f"{name}_{env}" if not name.endswith(f"_{env}") else name,
-        "yaml": _spec_yaml(spec),
-    }
-
-
-@router.get("/specs/{name}/postman")
-def studio_postman(name: str) -> JSONResponse:
-    from contractapi.application.postman_export import build_postman_collection
-
-    spec = spec_repo.read_spec(name)
-    return JSONResponse(build_postman_collection(spec))
-
-
-@router.get("/specs/{name}/sdk.py", response_class=PlainTextResponse)
-def studio_sdk_python(name: str) -> str:
-    spec = spec_repo.read_spec(name)
-    prefix = spec.app.api_prefix or ""
-    lines = [
-        "# Auto-generated thin client for contractapi — regenerate after contract changes",
-        "from __future__ import annotations",
-        "import os",
-        "import httpx",
-        "",
-        "BASE = os.environ.get('CONTRACTAPI_BASE', 'http://127.0.0.1:8000/data')",
-        "API_KEY = os.environ.get('DATA_API_KEY', '')",
-        "",
-        "def _headers():",
-        "    h = {'Accept': 'application/json'}",
-        "    if API_KEY:",
-        "        h['X-API-Key'] = API_KEY",
-        "    return h",
-        "",
-    ]
-    for ep in spec.endpoints:
-        fn = ep.name
-        path = f"{prefix}{ep.path}"
-        lines.append(f"def list_{fn}(**params):")
-        lines.append(f"    r = httpx.get(f'{{BASE}}{path}', params=params, headers=_headers())")
-        lines.append("    r.raise_for_status()")
-        lines.append("    return r.json()")
-        lines.append("")
-        lines.append(f"def get_{fn}(item_id, **params):")
-        lines.append(
-            f"    r = httpx.get(f'{{BASE}}{path}/{{item_id}}', params=params, headers=_headers())"
-        )
-        lines.append("    r.raise_for_status()")
-        lines.append("    return r.json()")
-        lines.append("")
-    return "\n".join(lines)
-
+router.include_router(routes_tools.router)
+router.include_router(routes_specs.router)
+router.include_router(routes_ops.router)
