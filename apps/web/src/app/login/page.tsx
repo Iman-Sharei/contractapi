@@ -18,8 +18,13 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [sso, setSso] = useState(false);
+  const [demoKey, setDemoKey] = useState<string | null>(null);
 
   useEffect(() => {
+    fetch("/api/session", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => setDemoKey(typeof s?.demoKey === "string" ? s.demoKey : null))
+      .catch(() => setDemoKey(null));
     fetch("/api/studio/oidc/config", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((cfg) => setSso(Boolean(cfg?.browser_login)))
@@ -53,6 +58,24 @@ function LoginForm() {
         server). The key is only checked here — your browser keeps a signed sign-in that expires
         after 12 hours, never the key itself.
       </p>
+      {demoKey ? (
+        <div className={styles.bannerOk} role="note" data-testid="login-demo-hint">
+          <span>
+            This is a demo install, so the key is <code>{demoKey}</code>.{" "}
+            <button type="button" className={styles.ghost} onClick={() => setKey(demoKey)}>
+              Use it
+            </button>
+            <br />
+            Before real use, set your own <code>STUDIO_API_KEY</code> in the server&apos;s{" "}
+            <code>.env</code> file and restart.
+          </span>
+        </div>
+      ) : (
+        <p className={styles.hint} data-testid="login-key-hint">
+          Don&apos;t have it? Ask whoever runs this server. They can read it with{" "}
+          <code>docker compose exec web printenv STUDIO_API_KEY</code>.
+        </p>
+      )}
       <form onSubmit={submit} className={styles.panel} style={{ display: "grid", gap: 12 }}>
         <label className={styles.field}>
           Studio key

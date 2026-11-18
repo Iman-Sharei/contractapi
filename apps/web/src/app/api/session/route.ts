@@ -9,6 +9,7 @@ import {
   problem,
   sameSecret,
   serverStudioKey,
+  signInHint,
   studioKeyForRequest,
 } from "@/lib/studioAuth";
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
     (await studioKeyForRequest(req.cookies.get(STUDIO_SESSION_COOKIE)?.value, env)) ||
       req.cookies.get(oidcCookieName(env))?.value,
   );
-  return NextResponse.json({ authenticated });
+  return NextResponse.json({ authenticated, ...signInHint(env) });
 }
 
 /** Sign in with the Studio key. The cookie gets a signed, expiring token — never the key. */

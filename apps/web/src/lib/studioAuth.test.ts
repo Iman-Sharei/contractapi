@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   createSessionToken,
+  DEMO_STUDIO_KEY,
   devAutologin,
+  signInHint,
   isCrossSiteWrite,
   looksLikeLiveSession,
   studioKeyForRequest,
@@ -35,6 +37,14 @@ describe("signed Studio session", () => {
   it("dev autologin never applies to production builds", () => {
     expect(devAutologin({ ...env, STUDIO_DEV_AUTOLOGIN: "true" })).toBe(false);
     expect(devAutologin({ NODE_ENV: "development", STUDIO_DEV_AUTOLOGIN: "true" })).toBe(true);
+  });
+});
+
+describe("signInHint", () => {
+  it("shows the key only while the server uses the public demo default", () => {
+    expect(signInHint({ STUDIO_API_KEY: DEMO_STUDIO_KEY })).toEqual({ demoKey: DEMO_STUDIO_KEY });
+    expect(signInHint({ STUDIO_API_KEY: "real-secret-key" })).toEqual({ demoKey: null });
+    expect(signInHint({})).toEqual({ demoKey: null });
   });
 });
 

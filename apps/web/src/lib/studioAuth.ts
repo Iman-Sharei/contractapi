@@ -26,6 +26,17 @@ export function oidcCookieName(env: Env): string {
   return env.STUDIO_OIDC_COOKIE_NAME || "contractapi_oidc";
 }
 
+/** Public default from docker-compose/README — not a secret, only valid for demos. */
+export const DEMO_STUDIO_KEY = "dev-studio-key-change-me";
+
+/**
+ * Sign-in help for first-time users. Reveals the key only when the server still uses the
+ * well-known demo default (already public); a real key is never exposed.
+ */
+export function signInHint(env: Env): { demoKey: string | null } {
+  return { demoKey: env.STUDIO_API_KEY === DEMO_STUDIO_KEY ? DEMO_STUDIO_KEY : null };
+}
+
 /** The server's Studio key (never sent to the browser). */
 export function serverStudioKey(env: Env): string | null {
   return env.STUDIO_API_KEY || null;
@@ -102,7 +113,7 @@ export function looksLikeLiveSession(token: string | undefined, nowMs = Date.now
 
 /** Studio key to send upstream for this request, or null when the caller is not signed in. */
 export async function studioKeyForRequest(sessionToken: string | undefined, env: Env): Promise<string | null> {
-  if (devAutologin(env)) return serverStudioKey(env) || "dev-studio-key-change-me";
+  if (devAutologin(env)) return serverStudioKey(env) || DEMO_STUDIO_KEY;
   return (await verifySessionToken(sessionToken, env)) ? serverStudioKey(env) : null;
 }
 

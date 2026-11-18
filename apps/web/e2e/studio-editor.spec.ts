@@ -9,6 +9,13 @@ test.describe("API page → editor → Use your API", () => {
     const name = `e2e_ed_${Date.now().toString(36)}`;
 
     await page.goto("/login?next=/studio");
+    // First-run help: the key is shown only while the server uses the public demo default.
+    if (STUDIO_KEY === "dev-studio-key-change-me") {
+      await expect(page.getByTestId("login-demo-hint")).toContainText(STUDIO_KEY);
+    } else {
+      await expect(page.getByTestId("login-key-hint")).toBeVisible();
+      await expect(page.locator("body")).not.toContainText(STUDIO_KEY);
+    }
     await page.getByTestId("login-key").fill(STUDIO_KEY);
     await page.getByTestId("login-submit").click();
     // Match the pathname: the login URL itself ends with "?next=/studio".
