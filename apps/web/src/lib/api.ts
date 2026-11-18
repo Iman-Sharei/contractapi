@@ -235,19 +235,16 @@ export async function importDbt(payload: Record<string, unknown> | unknown[]) {
   );
 }
 
-export async function gitStatus(repo?: string) {
-  const q = repo ? `?repo=${encodeURIComponent(repo)}` : "";
-  return studioFetch<{ repo: string; branch: string; sha: string; dirty: boolean }>(`/git/status${q}`);
+export async function gitStatus() {
+  return studioFetch<{ repo: string; branch: string; sha: string; dirty: boolean }>("/git/status");
 }
 
-export async function gitBranches(repo?: string) {
-  const q = repo ? `?repo=${encodeURIComponent(repo)}` : "";
-  return studioFetch<{ repo: string; current: string; branches: string[] }>(`/git/branches${q}`);
+export async function gitBranches() {
+  return studioFetch<{ repo: string; current: string; branches: string[] }>("/git/branches");
 }
 
-export async function gitTree(ref = "HEAD", path = "", repo?: string) {
+export async function gitTree(ref = "HEAD", path = "") {
   const params = new URLSearchParams({ ref, path });
-  if (repo) params.set("repo", repo);
   return studioFetch<{
     repo: string;
     ref: string;
@@ -256,9 +253,8 @@ export async function gitTree(ref = "HEAD", path = "", repo?: string) {
   }>(`/git/tree?${params}`);
 }
 
-export async function gitFile(path: string, ref = "HEAD", repo?: string) {
+export async function gitFile(path: string, ref = "HEAD") {
   const params = new URLSearchParams({ path, ref });
-  if (repo) params.set("repo", repo);
   return studioFetch<{
     repo: string;
     ref: string;

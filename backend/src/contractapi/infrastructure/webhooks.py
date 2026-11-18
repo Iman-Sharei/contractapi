@@ -102,7 +102,9 @@ def _send_with_retries(
 def _send_once(hook: WebhookConfig, body: bytes) -> None:
     headers = {"Content-Type": "application/json", "User-Agent": "contractapi-webhook/1"}
     if hook.secret:
-        sig = hmac.new(hook.secret.encode(), body, hashlib.sha256).hexdigest()
+        from contractapi.infrastructure.secrets import resolve_refs
+
+        sig = hmac.new(resolve_refs(hook.secret).encode(), body, hashlib.sha256).hexdigest()
         headers["X-Contractapi-Signature"] = f"sha256={sig}"
     req = urlrequest.Request(hook.url, data=body, headers=headers, method="POST")
     with urlrequest.urlopen(req, timeout=hook.timeout_seconds) as resp:  # noqa: S310

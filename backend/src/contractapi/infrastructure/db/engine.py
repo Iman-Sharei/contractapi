@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from threading import Lock
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
+from sqlalchemy.pool import NullPool
 
 from contractapi.core.config import get_settings
 from contractapi.domain.models.spec import DatabaseConfig, DatabaseDriver
@@ -20,8 +22,10 @@ def normalize_postgres_url(url: str) -> str:
 
 
 def create_pg_engine(url: str, *, pooled: bool = True) -> Engine:
+    from contractapi.infrastructure.secrets import resolve_refs
+
     settings = get_settings()
-    url = normalize_postgres_url(url)
+    url = normalize_postgres_url(resolve_refs(url))
     connect_args: dict = {}
     connect_args["options"] = f"-c statement_timeout={settings.db_statement_timeout_ms}"
 
@@ -35,7 +39,8 @@ def create_pg_engine(url: str, *, pooled: bool = True) -> Engine:
             connect_args=connect_args,
         )
     else:
-        engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
+        # One-off checks (introspect, preview, readiness): close connections on release.
+        engine = create_engine(url, poolclass=NullPool, connect_args=connect_args)
 
     @event.listens_for(engine, "connect")
     def _set_timeout(dbapi_connection, _connection_record):  # type: ignore[no-untyped-def]
@@ -116,14 +121,30 @@ def create_bigquery_engine(url: str) -> Engine:
     return create_engine(url)
 
 
+_shared: dict[tuple[str, str], Engine] = {}
+_shared_lock = Lock()
+
+
 def create_engine_for_config(config: DatabaseConfig, *, pooled: bool = True) -> Engine:
+    """Engine for a spec's database. Pooled Postgres engines are shared per URL so
+    rebuilding/previewing APIs does not open a new connection pool each time."""
+    from contractapi.infrastructure.secrets import resolve_refs
+
+    url = resolve_refs(config.url)
     if config.driver == DatabaseDriver.DUCKDB:
-        return create_duckdb_engine(config.url)
+        return create_duckdb_engine(url)
     if config.driver == DatabaseDriver.SNOWFLAKE:
-        return create_snowflake_engine(config.url)
+        return create_snowflake_engine(url)
     if config.driver == DatabaseDriver.BIGQUERY:
-        return create_bigquery_engine(config.url)
-    return create_pg_engine(config.url, pooled=pooled)
+        return create_bigquery_engine(url)
+    if not pooled:
+        return create_pg_engine(url, pooled=False)
+    key = (url, config.driver.value)
+    with _shared_lock:
+        engine = _shared.get(key)
+        if engine is None:
+            engine = _shared[key] = create_pg_engine(url, pooled=True)
+        return engine
 
 
 @lru_cache(maxsize=8)

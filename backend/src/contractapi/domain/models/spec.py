@@ -14,6 +14,20 @@ from contractapi.domain.sensitive import WRITE_METHODS, assert_fields_safe
 
 _IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
+# URL path segments: lowercase letters, digits, "-" and "_" (e.g. /order-items, /stats/daily).
+PATH_RE = re.compile(r"^(/[a-z0-9][a-z0-9_-]*)+$")
+# System routes served next to data endpoints. Only clash when api_prefix is empty.
+RESERVED_PATH_SEGMENTS = frozenset(
+    {"health", "ready", "metrics", "docs", "redoc", "openapi.json", "auth", "jobs", "graphql"}
+)
+
+
+def suggest_path(value: str) -> str:
+    """Best-effort valid path from free text (used in error messages)."""
+    parts = [re.sub(r"[^a-z0-9_-]+", "-", p.lower()).strip("-_") for p in value.split("/")]
+    joined = "/".join(p for p in parts if p)
+    return f"/{joined}" if joined else "/items"
+
 
 class HttpMethod(str, Enum):
     GET = "GET"
@@ -480,9 +494,13 @@ class EndpointSpec(BaseModel):
         value = value.strip()
         if not value.startswith("/"):
             value = "/" + value
-        if "//" in value:
-            raise ValueError("path must not contain empty segments")
-        return value.rstrip("/") or "/"
+        value = value.rstrip("/")
+        if not PATH_RE.match(value):
+            raise ValueError(
+                f"URL path '{value or '/'}' is not valid. Use lowercase letters, digits, "
+                f"'-' or '_' separated by '/', e.g. '{suggest_path(value) if value else '/items'}'."
+            )
+        return value
 
     @field_validator("fields", "filters", "sortable", "writable_fields", "roles")
     @classmethod
@@ -734,6 +752,13 @@ class ApiSpec(BaseModel):
                 raise ValueError(f"Duplicate endpoint name: {ep.name}")
             paths.add(ep.path)
             names.add(ep.name)
+            first = ep.path.split("/")[1]
+            if not self.app.api_prefix and first in RESERVED_PATH_SEGMENTS:
+                raise ValueError(
+                    f"Endpoint '{ep.name}': URL path '{ep.path}' clashes with the built-in "
+                    f"'/{first}' route. Rename it (e.g. '/{first}-data') or set an API prefix "
+                    "such as /v1."
+                )
             if self.app.read_only and ep.allows_writes:
                 raise ValueError(
                     f"Endpoint '{ep.name}' declares write methods but app.read_only=true"

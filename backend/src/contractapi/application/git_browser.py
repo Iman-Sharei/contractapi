@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -40,10 +41,30 @@ def _run(repo: Path, *args: str, timeout: float = 8.0) -> str:
     return proc.stdout
 
 
+_SAFE_REF = re.compile(r"^[A-Za-z0-9._/@{}~^][A-Za-z0-9._/@{}~^-]*$")
+
+
+def _check_ref(ref: str) -> str:
+    """Refs are passed to git as arguments: never allow option-like or odd values."""
+    safe = ref.strip() or "HEAD"
+    if not _SAFE_REF.match(safe) or ".." in safe or len(safe) > 200:
+        raise GitBrowserError("Unsafe ref")
+    return safe
+
+
+def _check_path(path: str, *, required: bool) -> str:
+    rel = path.strip().lstrip("/")
+    if (required and not rel) or rel.startswith("-") or ".." in rel.split("/") or "\0" in rel:
+        raise GitBrowserError("Unsafe path")
+    return rel
+
+
 def resolve_repo(path: str | None = None) -> Path:
+    """Only the configured repository (GIT_REPO_PATH, default: working dir) is browsable."""
     import os
 
-    candidate = path or os.environ.get("GIT_REPO_PATH") or "."
+    del path  # arbitrary filesystem paths are not accepted from clients
+    candidate = os.environ.get("GIT_REPO_PATH") or "."
     root = Path(candidate).expanduser().resolve()
     if not root.exists():
         raise GitBrowserError(f"Path not found: {root}")
@@ -84,12 +105,8 @@ def list_tree(
 ) -> dict[str, Any]:
     """List files/dirs at path for a ref (read-only)."""
     repo = resolve_repo(repo_path)
-    safe_ref = ref.strip() or "HEAD"
-    if ".." in safe_ref or any(c in safe_ref for c in " \t\n;|&"):
-        raise GitBrowserError("Unsafe ref")
-    prefix = path.strip().lstrip("/")
-    if ".." in prefix.split("/"):
-        raise GitBrowserError("Unsafe path")
+    safe_ref = _check_ref(ref)
+    prefix = _check_path(path, required=False)
     spec = f"{safe_ref}:{prefix}" if prefix else f"{safe_ref}:"
     raw = _run(repo, "ls-tree", "--name-only", spec)
     entries: list[dict[str, str]] = []
@@ -127,12 +144,8 @@ def read_file(
     max_bytes: int = 200_000,
 ) -> dict[str, Any]:
     repo = resolve_repo(repo_path)
-    safe_ref = ref.strip() or "HEAD"
-    if ".." in safe_ref or any(c in safe_ref for c in " \t\n;|&"):
-        raise GitBrowserError("Unsafe ref")
-    rel = path.strip().lstrip("/")
-    if not rel or ".." in rel.split("/"):
-        raise GitBrowserError("Unsafe path")
+    safe_ref = _check_ref(ref)
+    rel = _check_path(path, required=True)
     try:
         content = _run(repo, "show", f"{safe_ref}:{rel}", timeout=10.0)
     except GitBrowserError as exc:

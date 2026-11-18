@@ -10,10 +10,10 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, FastAPI, Query, Request
+from fastapi import APIRouter, Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
-from pydantic import BaseModel, ConfigDict, create_model
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 from sqlalchemy import MetaData, Table, asc, desc, func, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -44,6 +44,7 @@ from contractapi.infrastructure.audit import audit_event
 from contractapi.infrastructure.webhooks import dispatch_webhooks
 from contractapi.infrastructure.cache_store import response_cache
 from contractapi.infrastructure.db.engine import create_engine_for_config
+from contractapi.infrastructure.db.errors import db_error
 from contractapi.infrastructure.idempotency import (
     IdempotentRecord,
     fingerprint_payload,
@@ -52,7 +53,11 @@ from contractapi.infrastructure.idempotency import (
     serialize_json_body,
 )
 from contractapi.infrastructure.observability import Timer, metrics
-from contractapi.infrastructure.security.auth import authenticate_request, enforce_endpoint_roles
+from contractapi.infrastructure.security.auth import (
+    client_ip,
+    authenticate_request,
+    enforce_endpoint_roles,
+)
 from contractapi.infrastructure.security.jwt_tokens import (
     extract_bearer,
     refresh_tokens,
@@ -223,7 +228,9 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
 
         rate_info = None
         if spec.app.rate_limit.enabled:
-            client = str(principal.get("sub") or "anon")
+            sub = principal.get("sub")
+            # Anonymous callers get a bucket per client IP, not one shared bucket for all.
+            client = str(sub) if sub and sub != "anonymous" else f"ip:{client_ip(request)}"
             try:
                 rate_info = limiter.check(
                     f"data:{client}", limit=spec.app.rate_limit.requests_per_minute
@@ -521,16 +528,21 @@ def _build_write_models(endpoint: EndpointSpec, table: Table) -> tuple[type[Base
     return item, listing, write_model
 
 
-def _visible_fields(spec: ApiSpec, endpoint: EndpointSpec, request: Request) -> list[str]:
+def _rbac_fields(spec: ApiSpec, endpoint: EndpointSpec, request: Request) -> list[str]:
+    """Endpoint role gate + the fields this caller's roles may see (reads, writes, filters)."""
     principal = getattr(request.state, "principal", {"roles": []})
     enforce_endpoint_roles(principal, endpoint.roles)
     rbac = spec.rbac_fields_for(endpoint.name, list(principal.get("roles") or []))
     if rbac is None:
-        fields = list(endpoint.fields)
-    else:
-        fields = [f for f in endpoint.fields if f in rbac or f == endpoint.primary_key]
-        if endpoint.primary_key in endpoint.fields and endpoint.primary_key not in fields:
-            fields = [endpoint.primary_key, *fields]
+        return list(endpoint.fields)
+    fields = [f for f in endpoint.fields if f in rbac or f == endpoint.primary_key]
+    if endpoint.primary_key in endpoint.fields and endpoint.primary_key not in fields:
+        fields = [endpoint.primary_key, *fields]
+    return fields
+
+
+def _visible_fields(spec: ApiSpec, endpoint: EndpointSpec, request: Request) -> list[str]:
+    fields = _rbac_fields(spec, endpoint, request)
 
     # Sparse fieldsets: ?fields=id,name (must be subset of allowed)
     raw = request.query_params.get("fields")
@@ -692,7 +704,7 @@ def _add_list(
         "expand",
     }
 
-    async def list_items(
+    def list_items(
         request: Request,
         limit: int = Query(default=default_limit, ge=1, le=max_limit),
         offset: int = Query(default=0, ge=0),
@@ -728,11 +740,14 @@ def _add_list(
                 return _json_response(body, headers=headers)
             metrics.incr("contractapi_cache_misses_total", labels={"endpoint": endpoint.name})
 
+        # Filters/sort only on fields this caller may see — else hidden values leak by inference.
+        rbac_visible = set(_rbac_fields(spec, endpoint, request))
         filter_clauses = parse_filters(
             list(request.query_params.multi_items()),
             table=table,
             endpoint=endpoint,
             reserved=reserved,
+            visible=rbac_visible,
         )
         filter_clauses = apply_security_clauses(filter_clauses, table, endpoint, request)
         stmt = select(*(table.c[f] for f in endpoint.fields))
@@ -768,12 +783,7 @@ def _add_list(
                         total = int(conn.execute(count_stmt).scalar_one())
                     rows = conn.execute(stmt.limit(fetch_limit)).fetchall()
             except SQLAlchemyError as exc:
-                raise AppError(
-                    type_="https://contractapi.dev/problems/database-error",
-                    title="Database error",
-                    status=500,
-                    detail=exc.__class__.__name__,
-                ) from exc
+                raise db_error(exc) from exc
 
             has_more = len(rows) > limit
             rows = rows[:limit]
@@ -781,20 +791,24 @@ def _add_list(
             if has_more and items:
                 next_cursor = encode_cursor(items[-1][endpoint.primary_key])
         else:
+            pk_col = table.c[endpoint.primary_key]
             if sort:
                 descending = sort.startswith("-")
                 col_name = sort[1:] if descending else sort
-                if col_name not in allowed_sort:
+                sortable_now = allowed_sort & rbac_visible
+                if col_name not in sortable_now:
                     raise AppError(
                         type_="https://contractapi.dev/problems/invalid-sort",
                         title="Sort field not allowed",
                         status=400,
                         detail="Only configured sortable fields are accepted.",
-                        extensions={"allowed": sorted(allowed_sort), "rejected": col_name},
+                        extensions={"allowed": sorted(sortable_now), "rejected": col_name},
                     )
                 stmt = stmt.order_by(
                     desc(table.c[col_name]) if descending else asc(table.c[col_name])
                 )
+            # Deterministic paging: always end with the primary key as tie-breaker.
+            stmt = stmt.order_by(asc(pk_col))
             try:
                 with engine.connect() as conn:
                     count_stmt = select(func.count()).select_from(table)
@@ -803,12 +817,7 @@ def _add_list(
                     total = int(conn.execute(count_stmt).scalar_one())
                     rows = conn.execute(stmt.limit(limit).offset(offset)).fetchall()
             except SQLAlchemyError as exc:
-                raise AppError(
-                    type_="https://contractapi.dev/problems/database-error",
-                    title="Database error",
-                    status=500,
-                    detail=exc.__class__.__name__,
-                ) from exc
+                raise db_error(exc) from exc
             items = [_row_to_dict(r, endpoint.fields) for r in rows]
 
         active_relations = _select_relations(endpoint, include or expand)
@@ -907,7 +916,7 @@ def _add_detail(
     pk_type = _python_type(table.c[pk].type)
     rel_names = [r.name for r in endpoint.relations]
 
-    async def get_item(request: Request, item_id: Any) -> Any:
+    def get_item(request: Request, item_id: Any) -> Any:
         fields = _visible_fields(spec, endpoint, request)
         cache_key = (
             f"{_cache_prefix(spec, endpoint)}{_row_scope(endpoint, request)}"
@@ -925,12 +934,7 @@ def _add_detail(
             try:
                 item = _fetch_row(engine, table, endpoint, request, item_id)
             except SQLAlchemyError as exc:
-                raise AppError(
-                    type_="https://contractapi.dev/problems/database-error",
-                    title="Database error",
-                    status=500,
-                    detail=exc.__class__.__name__,
-                ) from exc
+                raise db_error(exc) from exc
             if item is None:
                 raise AppError(
                     type_="https://contractapi.dev/problems/not-found",
@@ -938,15 +942,19 @@ def _add_detail(
                     status=404,
                     detail=f"{endpoint.name} with {pk}={item_id} not found",
                 )
+            # ETag from the stored row (same basis as PATCH/PUT/DELETE If-Match), not the
+            # projected view — otherwise relations/RBAC/sparse fields break concurrency control.
+            etag = _etag_for(item, endpoint)
             if endpoint.relations:
                 load_relations(engine, metadata, endpoint.relations, [item])
             projected = _project_fields(item, fields, rel_names)
             if spec.app.cache.enabled:
-                response_cache.set(cache_key, projected, spec.app.cache.ttl_seconds)
+                response_cache.set(
+                    cache_key, {"body": projected, "etag": etag}, spec.app.cache.ttl_seconds
+                )
         else:
-            projected = cached
+            projected, etag = cached["body"], cached["etag"]
 
-        etag = _etag_for(projected, endpoint)
         if _check_if_none_match(request, etag):
             return Response(status_code=304, headers={"ETag": etag})
         headers = {"ETag": etag}
@@ -1063,16 +1071,9 @@ def _idempotency_commit(
     )
 
 
-async def _read_write_body(request: Request, write_model: type[BaseModel]) -> dict[str, Any]:
-    try:
-        raw = await request.json()
-    except Exception as exc:
-        raise AppError(
-            type_="https://contractapi.dev/problems/validation-error",
-            title="Validation failed",
-            status=422,
-            detail="Request body must be JSON.",
-        ) from exc
+def _validate_write_body(raw: Any, write_model: type[BaseModel]) -> dict[str, Any]:
+    if isinstance(raw, write_model):  # already validated by FastAPI from the declared body model
+        return raw.model_dump(exclude_unset=True)
     if not isinstance(raw, dict):
         raise AppError(
             type_="https://contractapi.dev/problems/validation-error",
@@ -1082,13 +1083,24 @@ async def _read_write_body(request: Request, write_model: type[BaseModel]) -> di
         )
     try:
         return write_model.model_validate(raw).model_dump(exclude_unset=True)
-    except Exception as exc:
+    except ValidationError as exc:
         raise AppError(
             type_="https://contractapi.dev/problems/validation-error",
             title="Validation failed",
             status=422,
-            detail=str(exc),
+            detail="One or more fields are invalid.",
+            extensions={"errors": exc.errors(include_url=False, include_input=False)},
         ) from exc
+
+
+def _bind_body(handler: Any, model: Any) -> None:
+    """Postponed annotations: give FastAPI the real body model (documents it in OpenAPI)."""
+    handler.__annotations__["body"] = model
+
+
+def _created_location(endpoint: EndpointSpec, item_id: Any) -> str:
+    # Relative reference (RFC 9110 §10.2.2): resolves against the collection URL under any mount.
+    return f"{endpoint.path.rsplit('/', 1)[-1]}/{item_id}"
 
 
 def _do_insert(engine: Engine, table: Table, endpoint: EndpointSpec, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1104,18 +1116,14 @@ def _do_insert(engine: Engine, table: Table, endpoint: EndpointSpec, payload: di
             detail="Insert violated a database constraint.",
         ) from exc
     except SQLAlchemyError as exc:
-        raise AppError(
-            type_="https://contractapi.dev/problems/database-error",
-            title="Database error",
-            status=500,
-            detail=exc.__class__.__name__,
-        ) from exc
+        raise db_error(exc) from exc
     return _row_to_dict(row, endpoint.fields)
 
 
 def _add_create(router, engine, table, endpoint, spec, item_model, write_model, tags) -> None:  # type: ignore[no-untyped-def]
-    async def create_item(request: Request) -> Any:
-        payload = await _read_write_body(request, write_model)
+    def create_item(request: Request, body: Any = Body(...)) -> Any:
+        visible = _visible_fields(spec, endpoint, request)  # role gate before any side effect
+        payload = _validate_write_body(body, write_model)
         validate_payload(endpoint, payload)
         payload = _inject_row_level(endpoint, request, payload)
         path = endpoint.path
@@ -1129,6 +1137,7 @@ def _add_create(router, engine, table, endpoint, spec, item_model, write_model, 
 
         if endpoint.async_writes:
             job_payload = {
+                # Unresolved URL: may hold ${secret:…}/${env:…} refs, resolved by the worker.
                 "database_url": spec.database.url,
                 "driver": spec.database.driver.value,
                 "table": endpoint.table,
@@ -1144,7 +1153,7 @@ def _add_create(router, engine, table, endpoint, spec, item_model, write_model, 
             def work() -> dict[str, Any]:
                 result = _do_insert(engine, table, endpoint, payload)
                 _invalidate_endpoint_cache(spec, endpoint)
-                return result
+                return _project_fields(result, visible, [])
 
             enqueue_job(job.id, work)
             _audit(spec, "create.async", endpoint, request, status=202, resource_id=None, meta={"job_id": job.id})
@@ -1155,6 +1164,9 @@ def _add_create(router, engine, table, endpoint, spec, item_model, write_model, 
             )
 
         result = _do_insert(engine, table, endpoint, payload)
+        body_out = _project_fields(result, visible, [])
+        new_id = result.get(endpoint.primary_key)
+        headers = {"ETag": _etag_for(result, endpoint), "Location": _created_location(endpoint, new_id)}
         _invalidate_endpoint_cache(spec, endpoint)
         _idempotency_commit(
             store_key,
@@ -1162,44 +1174,44 @@ def _add_create(router, engine, table, endpoint, spec, item_model, write_model, 
             path=path,
             payload=payload,
             status_code=201,
-            body=result,
+            body=body_out,
             ttl_seconds=spec.app.idempotency.ttl_seconds,
         )
-        _audit(spec, "create", endpoint, request, status=201, resource_id=result.get(endpoint.primary_key))
+        _audit(spec, "create", endpoint, request, status=201, resource_id=new_id)
         dispatch_webhooks(spec, event="create", endpoint=endpoint.name, payload=result)
-        headers = {"ETag": _etag_for(result, endpoint)}
-        return _json_response(result, status_code=201, headers=headers)
+        return _json_response(body_out, status_code=201, headers=headers)
 
     create_item.__name__ = f"create_{endpoint.name}"
+    _bind_body(create_item, write_model)
     router.add_api_route(
         endpoint.path,
         create_item,
         methods=["POST"],
         status_code=201,
         tags=tags,
+        summary=f"Create {endpoint.name}",
         name=f"create_{endpoint.name}",
     )
 
 
 def _add_bulk(router, engine, table, endpoint, spec, write_model, tags) -> None:  # type: ignore[no-untyped-def]
-    async def bulk_create(request: Request) -> Any:
-        try:
-            raw = await request.json()
-        except Exception as exc:
-            raise AppError(
-                type_="https://contractapi.dev/problems/validation-error",
-                title="Validation failed",
-                status=422,
-                detail="Request body must be JSON.",
-            ) from exc
-        if not isinstance(raw, dict) or "items" not in raw or not isinstance(raw["items"], list):
+    bulk_model = create_model(
+        f"{_model_name(endpoint.name)}Bulk",
+        items=(list[dict[str, Any]], Field(..., max_length=100)),
+    )
+
+    def bulk_create(request: Request, body: Any = Body(...)) -> Any:
+        visible = _visible_fields(spec, endpoint, request)
+        if isinstance(body, BaseModel):
+            body = body.model_dump()
+        if not isinstance(body, dict) or not isinstance(body.get("items"), list):
             raise AppError(
                 type_="https://contractapi.dev/problems/validation-error",
                 title="Validation failed",
                 status=422,
                 detail='Body must be {"items": [ ... ]}.',
             )
-        if len(raw["items"]) > 100:
+        if len(body["items"]) > 100:
             raise AppError(
                 type_="https://contractapi.dev/problems/validation-error",
                 title="Validation failed",
@@ -1209,16 +1221,14 @@ def _add_bulk(router, engine, table, endpoint, spec, write_model, tags) -> None:
 
         created: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
-        for idx, item in enumerate(raw["items"]):
+        for idx, item in enumerate(body["items"]):
             try:
-                payload = write_model.model_validate(item).model_dump(exclude_unset=True)
+                payload = _validate_write_body(item, write_model)
                 validate_payload(endpoint, payload)
                 payload = _inject_row_level(endpoint, request, payload)
                 created.append(_do_insert(engine, table, endpoint, payload))
             except AppError as exc:
                 errors.append({"index": idx, "status": exc.status, "detail": exc.detail})
-            except Exception as exc:  # noqa: BLE001
-                errors.append({"index": idx, "status": 500, "detail": str(exc)})
 
         if created:
             _invalidate_endpoint_cache(spec, endpoint)
@@ -1231,14 +1241,17 @@ def _add_bulk(router, engine, table, endpoint, spec, write_model, tags) -> None:
             meta={"created": len(created), "errors": len(errors)},
         )
         status = 201 if not errors else (207 if created else 422)
-        return _json_response({"items": created, "errors": errors}, status_code=status)
+        items_out = [_project_fields(r, visible, []) for r in created]
+        return _json_response({"items": items_out, "errors": errors}, status_code=status)
 
     bulk_create.__name__ = f"bulk_create_{endpoint.name}"
+    _bind_body(bulk_create, bulk_model)
     router.add_api_route(
         f"{endpoint.path}/bulk",
         bulk_create,
         methods=["POST"],
         tags=tags,
+        summary=f"Bulk create {endpoint.name} (max 100)",
         name=f"bulk_create_{endpoint.name}",
     )
 
@@ -1247,8 +1260,9 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
     pk = endpoint.primary_key
     pk_type = _python_type(table.c[pk].type)
 
-    async def update_item(request: Request, item_id: Any) -> Any:
-        payload = await _read_write_body(request, write_model)
+    def _update(request: Request, item_id: Any, body: Any, method: str) -> Any:
+        visible = _visible_fields(spec, endpoint, request)
+        payload = _validate_write_body(body, write_model)
         if not payload:
             raise AppError(
                 type_="https://contractapi.dev/problems/validation-error",
@@ -1256,6 +1270,18 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
                 status=422,
                 detail="Request body must include at least one field.",
             )
+        if method == "PUT":
+            # PUT replaces the resource: every writable field must be sent (use PATCH for partial).
+            owner = endpoint.row_level.column if endpoint.row_level else None
+            missing = [f for f in endpoint.writable_fields if f not in payload and f != owner]
+            if missing:
+                raise AppError(
+                    type_="https://contractapi.dev/problems/validation-error",
+                    title="Validation failed",
+                    status=422,
+                    detail="PUT replaces the whole resource; send every writable field or use PATCH.",
+                    extensions={"missing": missing},
+                )
         validate_payload(endpoint, payload)
         # Prevent changing ownership column away from claim
         if endpoint.row_level and endpoint.row_level.column in payload:
@@ -1263,10 +1289,10 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
 
         path = f"{endpoint.path}/{item_id}"
         store_key = _idempotency_begin(
-            request, spec=spec, endpoint=endpoint, method="PATCH", path=path, payload=payload
+            request, spec=spec, endpoint=endpoint, method=method, path=path, payload=payload
         )
         if store_key:
-            replay = _idempotency_replay_or_conflict(store_key, method="PATCH", path=path, payload=payload)
+            replay = _idempotency_replay_or_conflict(store_key, method=method, path=path, payload=payload)
             if replay is not None:
                 return replay
 
@@ -1298,12 +1324,7 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
                 detail="Update violated a database constraint.",
             ) from exc
         except SQLAlchemyError as exc:
-            raise AppError(
-                type_="https://contractapi.dev/problems/database-error",
-                title="Database error",
-                status=500,
-                detail=exc.__class__.__name__,
-            ) from exc
+            raise db_error(exc) from exc
         if row is None:
             raise AppError(
                 type_="https://contractapi.dev/problems/not-found",
@@ -1312,41 +1333,61 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
                 detail=f"{endpoint.name} with {pk}={item_id} not found",
             )
         result = _row_to_dict(row, endpoint.fields)
+        body_out = _project_fields(result, visible, [])
         _invalidate_endpoint_cache(spec, endpoint)
         _idempotency_commit(
             store_key,
-            method="PATCH",
+            method=method,
             path=path,
             payload=payload,
             status_code=200,
-            body=result,
+            body=body_out,
             ttl_seconds=spec.app.idempotency.ttl_seconds,
         )
         _audit(spec, "update", endpoint, request, status=200, resource_id=item_id)
         dispatch_webhooks(spec, event="update", endpoint=endpoint.name, payload=result)
-        return _json_response(result, headers={"ETag": _etag_for(result, endpoint)})
+        return _json_response(body_out, headers={"ETag": _etag_for(result, endpoint)})
 
-    methods = []
-    if HttpMethod.PUT in endpoint.methods:
-        methods.append("PUT")
     if HttpMethod.PATCH in endpoint.methods:
-        methods.append("PATCH")
-    update_item.__name__ = f"update_{endpoint.name}"
-    _bind_path_type(update_item, "item_id", pk_type)
-    router.add_api_route(
-        f"{endpoint.path}/{{item_id}}",
-        update_item,
-        methods=methods,
-        tags=tags,
-        name=f"update_{endpoint.name}",
-    )
+
+        def patch_item(request: Request, item_id: Any, body: Any = Body(...)) -> Any:
+            return _update(request, item_id, body, "PATCH")
+
+        patch_item.__name__ = f"update_{endpoint.name}"
+        _bind_path_type(patch_item, "item_id", pk_type)
+        _bind_body(patch_item, write_model)
+        router.add_api_route(
+            f"{endpoint.path}/{{item_id}}",
+            patch_item,
+            methods=["PATCH"],
+            tags=tags,
+            summary=f"Update {endpoint.name} (partial)",
+            name=f"update_{endpoint.name}",
+        )
+    if HttpMethod.PUT in endpoint.methods:
+
+        def put_item(request: Request, item_id: Any, body: Any = Body(...)) -> Any:
+            return _update(request, item_id, body, "PUT")
+
+        put_item.__name__ = f"replace_{endpoint.name}"
+        _bind_path_type(put_item, "item_id", pk_type)
+        _bind_body(put_item, write_model)
+        router.add_api_route(
+            f"{endpoint.path}/{{item_id}}",
+            put_item,
+            methods=["PUT"],
+            tags=tags,
+            summary=f"Replace {endpoint.name} (all writable fields)",
+            name=f"replace_{endpoint.name}",
+        )
 
 
 def _add_delete(router, engine, table, endpoint, spec, tags) -> None:  # type: ignore[no-untyped-def]
     pk = endpoint.primary_key
     pk_type = _python_type(table.c[pk].type)
 
-    async def delete_item(request: Request, item_id: Any) -> Response:
+    def delete_item(request: Request, item_id: Any) -> Response:
+        _rbac_fields(spec, endpoint, request)  # endpoint role gate
         path = f"{endpoint.path}/{item_id}"
         payload = {"id": item_id}
         store_key = _idempotency_begin(
@@ -1381,12 +1422,7 @@ def _add_delete(router, engine, table, endpoint, spec, tags) -> None:  # type: i
                 else:
                     result = conn.execute(table.delete().where(where))
         except SQLAlchemyError as exc:
-            raise AppError(
-                type_="https://contractapi.dev/problems/database-error",
-                title="Database error",
-                status=500,
-                detail=exc.__class__.__name__,
-            ) from exc
+            raise db_error(exc) from exc
         if result.rowcount == 0:
             raise AppError(
                 type_="https://contractapi.dev/problems/not-found",

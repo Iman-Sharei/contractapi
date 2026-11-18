@@ -61,7 +61,7 @@ def test_graphql_table_and_sql_reads():
                 },
                 {
                     "name": "metrics",
-                    "path": "/metrics",
+                    "path": "/metric-values",
                     "sql": "SELECT 1 AS id, 'ok' AS status",
                     "primary_key": "id",
                     "fields": ["id", "status"],

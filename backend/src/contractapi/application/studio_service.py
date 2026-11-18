@@ -164,12 +164,19 @@ def validate_spec_payload(raw: dict[str, Any], *, check_db: bool = True) -> dict
         except Exception as exc:  # noqa: BLE001
             warnings.append(f"Database check skipped: {exc}")
 
+    from contractapi.infrastructure.secrets import has_literal_password, mask_spec_dict
+
+    if spec is not None and has_literal_password(spec.database.url):
+        warnings.append(
+            "The database password is written in the URL. Studio moves it to the server's "
+            "secret store when you save or activate, so it never lands in YAML or git."
+        )
     return {
         "valid": not errors,
         "errors": errors,
         "warnings": warnings,
         "endpoint_count": len(spec.endpoints) if spec else 0,
-        "spec": spec.model_dump(by_alias=True, mode="json") if spec else None,
+        "spec": mask_spec_dict(spec.model_dump(by_alias=True, mode="json")) if spec else None,
     }
 
 
@@ -179,6 +186,10 @@ def activate_spec(
     name: str | None = None,
     primary: bool = True,
 ) -> ApiSpec:
+    from contractapi.infrastructure.secrets import secure_spec_payload
+
+    # Runtime state (active.json) is persisted too: never with a literal password.
+    raw = secure_spec_payload(raw, (name or "_default").strip() or "_default")
     result = validate_spec_payload(raw, check_db=True)
     if not result["valid"]:
         raise AppError(

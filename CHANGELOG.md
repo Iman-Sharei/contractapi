@@ -4,6 +4,34 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Correctness & API standards
+- Filters convert values to the column type: numeric, date, datetime, bool and uuid columns
+  now filter correctly (were HTTP 500). A bad value is a 400 that says what format is expected;
+  `?q=` searches text columns only; `%`/`_` in `contains`/`startswith` are literal
+- SQL endpoints: bad `sql_params` → 422, bad filter values → 400 (were 500)
+- `PUT` is a real replace (missing writable fields → 422); `PATCH` stays partial
+- `201 Created` includes a `Location` header; write bodies are documented in OpenAPI
+- GET `ETag` now works with `If-Match` on PATCH/PUT/DELETE even with relations/RBAC/sparse fields
+- Offset paging always ends with the primary key as tie-breaker (stable pages)
+- CORS allows `If-Match`/`If-None-Match` and exposes `ETag`, `Link`, `Location`, rate-limit headers
+- URL paths are validated (lowercase, digits, `-`, `_`); without an API prefix, paths cannot
+  shadow built-in routes (`/health`, `/metrics`, `/docs`, `/jobs`, …). Studio explains bad paths
+  inline and the wizard generates valid ones
+
+### Security
+- RBAC field allowlists apply to POST/PATCH/PUT/bulk responses; filters, `?q=` and sort only
+  accept fields the caller may see; endpoint `roles` are enforced on writes (were GET-only)
+- Database passwords and webhook secrets are moved from specs into a server-side secret store
+  (`SPECS_DIR/.secrets`, 0600) on save/activate; YAML keeps `${secret:NAME}` (or `${env:NAME}`).
+  Studio responses mask any literal password
+- IP allowlist: real CIDR matching; `X-Forwarded-For` only trusted from `TRUSTED_PROXIES`
+- Git browser: only `GIT_REPO_PATH`; option-like refs/paths rejected (was arbitrary file write)
+- Anonymous rate limiting is per client IP instead of one shared bucket
+
+### Performance
+- Data-plane handlers run in the threadpool (no event-loop blocking); API rebuilds too
+- Pooled Postgres engines are shared per URL; one-off checks use no pool (no connection leaks)
+
 ### Security (breaking — see docs/UPGRADING.md)
 - Studio web requires sign-in (`/login`, Studio key or SSO); the Next BFF no longer injects
   `STUDIO_API_KEY` / `DATA_API_KEY` for signed-out browsers, and blocks cross-site writes

@@ -42,7 +42,9 @@ We aim to acknowledge within **72 hours** and ship a fix or mitigation advisory 
 2. Prefer Studio behind VPN / SSO (OIDC) + keep API key as break-glass only.
 3. Use Next BFF (`STUDIO_API_KEY` server-only) — never `NEXT_PUBLIC_*` secrets in prod.
 4. Set `app.read_only: true` unless writes are required; enable `row_level` + RBAC for JWT.
-5. Restrict `ip_allowlist` when exposing data-plane.
+5. Restrict `ip_allowlist` when exposing data-plane; behind a reverse proxy set
+   `TRUSTED_PROXIES` so `X-Forwarded-For` is honored only from it.
+   DB passwords/webhook secrets live in `SPECS_DIR/.secrets` (0600) — protect and back up that folder.
 6. Put Redis on a private network; enable `JOB_QUEUE_ENABLED` only if you run workers you trust.
 7. Rotate managed API keys via Studio Ops; revoke on leak.
 8. Keep `audit_enabled` and ship `AUDIT_LOG_PATH` off-box.

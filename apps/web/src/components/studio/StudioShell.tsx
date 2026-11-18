@@ -20,6 +20,7 @@ import {
 import { copyText } from "@/lib/copy";
 import { defaultSafeColumns } from "@/lib/pickColumns";
 import { tableKey } from "@/lib/tableKey";
+import { pathError } from "@/lib/pathRules";
 import type {
   ApiSpecDraft,
   DatabaseDriver,
@@ -1291,7 +1292,13 @@ export function StudioShell({
                         value={endpoint.path}
                         onChange={(e) => updateEndpoint({ path: e.target.value })}
                         spellCheck={false}
+                        aria-invalid={Boolean(pathError(endpoint.path, spec.app.api_prefix ?? ""))}
                       />
+                      {pathError(endpoint.path, spec.app.api_prefix ?? "") && (
+                        <span className={styles.errLine} role="alert">
+                          {pathError(endpoint.path, spec.app.api_prefix ?? "")}
+                        </span>
+                      )}
                     </label>
                     <label>
                       Primary key

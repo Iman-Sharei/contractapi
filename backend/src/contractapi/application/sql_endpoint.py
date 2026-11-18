@@ -16,6 +16,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from contractapi.application.cursor_paging import decode_cursor, encode_cursor
 from contractapi.core.errors import AppError
+from contractapi.infrastructure.db.errors import db_error
+from contractapi.application.query_filters import escape_like
 from contractapi.domain.models.spec import ApiSpec, EndpointSpec, PaginationMode
 
 
@@ -85,11 +87,11 @@ def _build_where(
             clauses.append(f"{col} <= :{pname}")
             params[pname] = value
         elif op == "contains":
-            clauses.append(f"{col} ILIKE :{pname}")
-            params[pname] = f"%{value}%"
+            clauses.append(f"CAST({col} AS TEXT) ILIKE :{pname} ESCAPE '\\'")
+            params[pname] = f"%{escape_like(value)}%"
         elif op == "startswith":
-            clauses.append(f"{col} ILIKE :{pname}")
-            params[pname] = f"{value}%"
+            clauses.append(f"CAST({col} AS TEXT) ILIKE :{pname} ESCAPE '\\'")
+            params[pname] = f"{escape_like(value)}%"
         elif op == "in":
             values = [v for v in value.split(",") if v != ""]
             placeholders = []
@@ -166,14 +168,23 @@ def bind_sql_params(endpoint: EndpointSpec, request: Request) -> dict[str, Any]:
             if param.default is not None:
                 out[param.name] = param.default
             continue
-        if param.type == "int":
-            out[param.name] = int(raw)
-        elif param.type == "float":
-            out[param.name] = float(raw)
-        elif param.type == "bool":
-            out[param.name] = raw.lower() in {"1", "true", "yes", "on"}
-        else:
-            out[param.name] = raw
+        try:
+            if param.type == "int":
+                out[param.name] = int(raw)
+            elif param.type == "float":
+                out[param.name] = float(raw)
+            elif param.type == "bool":
+                out[param.name] = raw.lower() in {"1", "true", "yes", "on"}
+            else:
+                out[param.name] = raw
+        except ValueError as exc:
+            expected = {"int": "an integer (e.g. 42)", "float": "a number (e.g. 9.5)"}[param.type]
+            raise AppError(
+                type_="https://contractapi.dev/problems/validation-error",
+                title="Validation failed",
+                status=422,
+                detail=f"SQL param '{param.name}' must be {expected}.",
+            ) from exc
     return out
 
 
@@ -194,7 +205,7 @@ def mount_sql_endpoint(
     select_list = ", ".join(f"q.{_quote_ident(f)}" for f in endpoint.fields)
     inner = _inner_sql(endpoint)
 
-    async def list_items(
+    def list_items(
         request: Request,
         limit: int = Query(default=default_limit, ge=1, le=max_limit),
         offset: int = Query(default=0, ge=0),
@@ -257,12 +268,7 @@ def mount_sql_endpoint(
                     )
                 rows = conn.execute(text(page_sql), params).mappings().all()
         except SQLAlchemyError as exc:
-            raise AppError(
-                type_="https://contractapi.dev/problems/database-error",
-                title="Database error",
-                status=500,
-                detail=exc.__class__.__name__,
-            ) from exc
+            raise db_error(exc) from exc
 
         next_cursor = None
         if mode == PaginationMode.CURSOR:
@@ -323,7 +329,7 @@ def mount_sql_endpoint(
 
     pk = endpoint.primary_key
 
-    async def get_item(request: Request, item_id: Any) -> Any:
+    def get_item(request: Request, item_id: Any) -> Any:
         fields = dab._visible_fields(spec, endpoint, request)
         sql = (
             f"SELECT {select_list} FROM ({inner}) AS q "
@@ -333,12 +339,7 @@ def mount_sql_endpoint(
             with engine.connect() as conn:
                 row = conn.execute(text(sql), {"id": item_id}).mappings().first()
         except SQLAlchemyError as exc:
-            raise AppError(
-                type_="https://contractapi.dev/problems/database-error",
-                title="Database error",
-                status=500,
-                detail=exc.__class__.__name__,
-            ) from exc
+            raise db_error(exc) from exc
         if row is None:
             raise AppError(
                 type_="https://contractapi.dev/problems/not-found",

@@ -180,7 +180,7 @@ def test_graphql_row_level_claims():
             "endpoints": [
                 {
                     "name": "docs",
-                    "path": "/docs",
+                    "path": "/docs-items",
                     "table": "docs",
                     "schema": "main",
                     "methods": ["GET"],

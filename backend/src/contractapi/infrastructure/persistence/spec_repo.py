@@ -76,12 +76,16 @@ def _history_dir(name: str) -> Path:
 def save_spec(name: str, raw: dict) -> ApiSpec:
     import time
 
+    from contractapi.infrastructure.secrets import secure_spec_payload
+
     name = _safe_name(name)
-    spec = parse_spec(raw)
+    # Never write a literal password to (git-friendly) YAML: move it to the secret store.
+    spec = parse_spec(secure_spec_payload(raw, name))
     path = specs_dir() / f"{name}.yaml"
     # Snapshot previous version before overwrite
     if path.exists():
-        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        # Microsecond suffix: two saves in the same second must not overwrite a snapshot.
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + f"-{time.time_ns() // 1000 % 1_000_000:06d}"
         snap = _history_dir(name) / f"{stamp}.yaml"
         snap.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     path.write_text(dump_spec(spec), encoding="utf-8")

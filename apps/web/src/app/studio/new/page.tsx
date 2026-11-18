@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { defaultSafeColumns, ensurePrimaryKey, formatApiPath } from "@/lib/pickColumns";
 import { tableKey } from "@/lib/tableKey";
+import { defaultPath } from "@/lib/pathRules";
 import type { ApiSpecDraft, EndpointDraft, TableInfo } from "@/lib/types";
 import { ALL_FILTER_OPS } from "@/lib/types";
 import styles from "@/components/studio/flow.module.css";
@@ -65,7 +66,7 @@ export default function NewApiWizardPage() {
       if (fields.length === 0) continue;
       endpoints.push({
         name,
-        path: `/${name}`,
+        path: defaultPath(name, apiPrefix),
         table: table.name,
         schema: table.schema,
         methods: ["GET"],

@@ -11,6 +11,19 @@
 4. **`auth: api_key`** now needs at least one key (`DATA_API_KEYS` or Studio → Ops → API keys);
    use `auth: none` for an intentionally public read-only API.
 5. **`ENVIRONMENT=production`** refuses to boot with default/short `STUDIO_API_KEY` / `JWT_SECRET`.
+6. **Endpoint paths:** must be lowercase letters, digits, `-`, `_` (e.g. `/order-items`). With an
+   empty `api_prefix`, a path cannot start with `health`, `ready`, `metrics`, `docs`, `redoc`,
+   `auth`, `jobs` or `graphql` — rename (e.g. `/metrics-data`) or set `api_prefix: /v1`.
+   Saved specs that break this rule fail validation with a message saying how to fix them.
+7. **PUT** now replaces the whole resource and requires every writable field (422 lists the
+   missing ones). Use **PATCH** for partial updates.
+8. **Secrets:** the next save/activate moves a literal DB password (and webhook secrets) into
+   `SPECS_DIR/.secrets/` and rewrites the spec to `${secret:db-<name>}`. Back up / mount that
+   folder with your specs. Workers on other hosts need the same folder or `${env:VAR}` refs.
+9. **Behind a reverse proxy** with `ip_allowlist`: set `TRUSTED_PROXIES` (IPs/CIDRs of the proxy),
+   otherwise the proxy's own address is checked.
+10. **Git browser:** the `repo` query parameter is gone; set `GIT_REPO_PATH` on the server.
+11. **Filters/sort with RBAC:** callers can only filter/sort on fields their role can see.
 
 ## 0.4.x → 0.5.0
 

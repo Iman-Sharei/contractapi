@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 from typing import Annotated, Any
 
 from fastapi import Header, Request
@@ -80,30 +81,47 @@ def enforce_data_api_key(request: Request, required_keys: set[str]) -> None:
     )
 
 
-def _client_ip(request: Request) -> str:
+def _parse_networks(entries: list[str]) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    nets = []
+    for entry in entries:
+        raw = entry.strip()
+        if raw.endswith("."):  # legacy "10.0.0." prefix form → 10.0.0.0/24-style
+            octets = raw.rstrip(".").split(".")
+            raw = ".".join(octets + ["0"] * (4 - len(octets))) + f"/{8 * len(octets)}"
+        try:
+            nets.append(ipaddress.ip_network(raw, strict=False))
+        except ValueError:
+            continue
+    return nets
+
+
+def _in_networks(ip: str, entries: list[str]) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in net for net in _parse_networks(entries))
+
+
+def client_ip(request: Request) -> str:
+    """Peer address; X-Forwarded-For is honored only when the peer is a trusted proxy."""
+    peer = request.client.host if request.client else ""
+    trusted = [p for p in get_settings().trusted_proxies.split(",") if p.strip()]
     forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return ""
+    if forwarded and trusted and _in_networks(peer, trusted):
+        # Rightmost address not belonging to our proxies is the real client.
+        for hop in reversed([h.strip() for h in forwarded.split(",") if h.strip()]):
+            if not _in_networks(hop, trusted):
+                return hop
+    return peer
 
 
 def enforce_ip_allowlist(request: Request, allowlist: list[str]) -> None:
     if not allowlist:
         return
-    ip = _client_ip(request)
-    if ip in allowlist or ip == "testclient":
+    ip = client_ip(request)
+    if _in_networks(ip, allowlist):
         return
-    # naive CIDR: prefix match for x.x.x.0/24 style written as "10.0.0."
-    for entry in allowlist:
-        if entry.endswith(".") and ip.startswith(entry):
-            return
-        if "/" in entry:
-            # simple prefix before /
-            base = entry.split("/")[0].rsplit(".", 1)[0] + "."
-            if ip.startswith(base):
-                return
     raise AppError(
         type_="https://contractapi.dev/problems/forbidden",
         title="Forbidden",

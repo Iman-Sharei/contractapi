@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -67,7 +68,8 @@ class DataPlaneASGI:
             scope = dict(scope)
             scope["path"] = path[len("/data") :] or "/"
 
-        app = self._ensure()
+        # Building a data app reflects the DB (blocking I/O): keep it off the event loop.
+        app = await run_in_threadpool(self._ensure)
         if app is None:
             body = problem_response(
                 type_="https://contractapi.dev/problems/no-active-api",
@@ -104,7 +106,7 @@ class MultiApiASGI:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             return
-        self._sync()
+        await run_in_threadpool(self._sync)
         path = scope.get("path") or ""
         # Match DataPlaneASGI: TestClient/uvicorn may pass the full /apis/... path.
         if path == "/apis":
@@ -206,8 +208,23 @@ def create_studio_app() -> FastAPI:
             "X-API-Key",
             "X-Request-ID",
             "Idempotency-Key",
+            "If-Match",
+            "If-None-Match",
         ],
-        expose_headers=["X-Request-ID", "Idempotent-Replayed", "Retry-After"],
+        # Browser clients need these to use ETags, pagination links, created URLs and limits.
+        expose_headers=[
+            "X-Request-ID",
+            "Idempotent-Replayed",
+            "Retry-After",
+            "ETag",
+            "Link",
+            "Location",
+            "Deprecation",
+            "Sunset",
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Reset",
+        ],
         max_age=600,
     )
     app.add_middleware(SecurityHeadersMiddleware)

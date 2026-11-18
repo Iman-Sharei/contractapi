@@ -23,6 +23,13 @@ class Settings(BaseSettings):
         description="Required on studio routes via X-API-Key (OWASP: protect management plane).",
     )
     cors_origins: str = "http://localhost:3000"
+    trusted_proxies: str = Field(
+        default="",
+        description=(
+            "Comma-separated IPs/CIDRs of reverse proxies whose X-Forwarded-For is trusted "
+            "(for ip_allowlist). Empty = use the direct peer address only."
+        ),
+    )
 
     # Data-plane defaults
     default_rate_limit_per_minute: int = 120
