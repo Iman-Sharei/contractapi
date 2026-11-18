@@ -248,9 +248,8 @@ def create_studio_app() -> FastAPI:
 
     @app.get("/health")
     def root_health() -> dict[str, Any]:
-        from contractapi.infrastructure.security.oidc import oidc_enabled
-
         from contractapi.application.graphql_facade import graphql_available
+        from contractapi.infrastructure.security.oidc import oidc_enabled
 
         return {
             "status": "ok",

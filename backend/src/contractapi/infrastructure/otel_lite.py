@@ -47,6 +47,6 @@ def emit_span(
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        urlrequest.urlopen(req, timeout=1.5)  # noqa: S310
+        urlrequest.urlopen(req, timeout=1.5)
     except Exception as exc:  # noqa: BLE001
         logger.debug("otel export skipped: %s", exc)

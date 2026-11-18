@@ -9,17 +9,17 @@ from __future__ import annotations
 import re
 
 SENSITIVE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"password", re.I),
-    re.compile(r"passwd", re.I),
-    re.compile(r"secret", re.I),
-    re.compile(r"token", re.I),
-    re.compile(r"api[_-]?key", re.I),
-    re.compile(r"private[_-]?key", re.I),
-    re.compile(r"ssn", re.I),
-    re.compile(r"credit[_-]?card", re.I),
-    re.compile(r"cvv", re.I),
-    re.compile(r"salt", re.I),
-    re.compile(r"hash$", re.I),
+    re.compile(r"password", re.IGNORECASE),
+    re.compile(r"passwd", re.IGNORECASE),
+    re.compile(r"secret", re.IGNORECASE),
+    re.compile(r"token", re.IGNORECASE),
+    re.compile(r"api[_-]?key", re.IGNORECASE),
+    re.compile(r"private[_-]?key", re.IGNORECASE),
+    re.compile(r"ssn", re.IGNORECASE),
+    re.compile(r"credit[_-]?card", re.IGNORECASE),
+    re.compile(r"cvv", re.IGNORECASE),
+    re.compile(r"salt", re.IGNORECASE),
+    re.compile(r"hash$", re.IGNORECASE),
 )
 
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})

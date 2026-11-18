@@ -11,11 +11,12 @@ from contractapi.domain.models.spec import (
     AggregateConfig,
     AggregateMetric,
     AggregateOp,
+    DatabaseConfig,
+    DatabaseDriver,
     compile_aggregate_sql,
     parse_spec,
 )
 from contractapi.infrastructure.db.engine import create_engine_for_config
-from contractapi.domain.models.spec import DatabaseConfig, DatabaseDriver
 
 
 def test_compile_aggregate_sql():

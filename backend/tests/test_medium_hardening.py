@@ -58,7 +58,7 @@ def pg():
                     "(1,'k1',NULL),(1,'k2',now()),(1,'k3',NULL),(1,'k4',NULL),(1,'k5',NULL)"
                 )
             )
-    except Exception:  # noqa: BLE001
+    except Exception:
         pytest.skip("Postgres demo unavailable")
     yield engine
     with engine.begin() as conn:

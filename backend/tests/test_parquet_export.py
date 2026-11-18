@@ -5,7 +5,6 @@ from sqlalchemy import text
 from contractapi.application.data_api_builder import create_data_app
 from contractapi.domain.models.spec import parse_spec
 
-
 pyarrow = pytest.importorskip("pyarrow")
 
 

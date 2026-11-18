@@ -119,7 +119,7 @@ def get_kv() -> KvStore:
             _store = RedisKv(settings.redis_url)
             logger.info("Using Redis KV at %s", settings.redis_url.split("@")[-1])
             return _store
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — any client/connection error → in-memory fallback
             logger.warning("Redis unavailable (%s); falling back to memory KV", exc)
     _store = MemoryKv()
     return _store

@@ -6,8 +6,9 @@ import json
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from contractapi.core.config import get_settings
 from contractapi.core.logging import get_logger

@@ -83,8 +83,10 @@ class SpecStore:
                 }
                 primary = self._primary
             save_active(primary, specs)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 — persistence is best-effort; serving continues
+            import logging
+
+            logging.getLogger("contractapi.runtime").warning("Could not persist active APIs: %s", exc)
 
     def revision(self) -> tuple[str | None, tuple[tuple[str, int], ...]]:
         """Cache-bust key for ASGI mounts: primary + (name, id(spec)) pairs."""

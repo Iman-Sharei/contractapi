@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 from contractapi.core.config import get_settings
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, dump_spec, load_spec, parse_spec
@@ -60,8 +62,8 @@ def list_specs() -> list[dict[str, object]]:
                     "read_only": spec.app.read_only,
                 }
             )
-        except Exception:
-            pass
+        except (ValueError, OSError, yaml.YAMLError):
+            meta["invalid"] = True  # listed so the user can open and fix it
         items.append(meta)
     items.sort(key=lambda x: str(x["name"]))
     return items

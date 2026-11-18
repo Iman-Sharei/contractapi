@@ -55,7 +55,7 @@ all = [
 dev = [
   "pytest>=8.3.0",
   "httpx>=0.27.0",
-  "ruff>=0.7.0",
+  "ruff>=0.17,<0.18",  # pinned: CI lints with the same rule defaults
   "pyarrow>=17.0.0",
   "cryptography>=43.0.0",
   "build>=1.2.0",
@@ -82,6 +82,10 @@ pythonpath = ["src"]
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.lint.per-file-ignores]
+# "Skip when the demo Postgres is not running" probes catch any connection error on purpose.
+"tests/**" = ["BLE001"]
+
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI parameter markers are evaluated once by design.
-extend-immutable-calls = ["fastapi.Body", "fastapi.Query", "fastapi.Depends"]
+extend-immutable-calls = ["fastapi.Body", "fastapi.Query", "fastapi.Depends", "typer.Argument", "typer.Option"]

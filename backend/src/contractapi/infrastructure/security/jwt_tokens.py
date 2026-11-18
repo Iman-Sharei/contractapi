@@ -186,15 +186,14 @@ def verify_token(
             detail="JWT validation failed.",
         ) from exc
 
+    # A token without "typ" (legacy) is accepted; a token of another type never is.
     if expected_typ and claims.get("typ") not in {expected_typ, None}:
-        # allow legacy tokens without typ when expecting access
-        if not (expected_typ == "access" and claims.get("typ") is None):
-            raise AppError(
-                type_="https://contractapi.dev/problems/invalid-token",
-                title="Invalid token type",
-                status=401,
-                detail=f"Expected {expected_typ} token.",
-            )
+        raise AppError(
+            type_="https://contractapi.dev/problems/invalid-token",
+            title="Invalid token type",
+            status=401,
+            detail=f"Expected {expected_typ} token.",
+        )
     jti = str(claims.get("jti") or "")
     if jti and expected_typ != "refresh" and is_access_revoked(jti):
         raise AppError(

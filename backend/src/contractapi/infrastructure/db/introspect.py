@@ -59,9 +59,9 @@ def introspect_with_engine(engine: Engine, schema: str = "public") -> list[Table
 def _build_table_info(
     inspector: object, name: str, schema: str, *, kind: str = "table"
 ) -> TableInfo:
-    get_pk = getattr(inspector, "get_pk_constraint")
-    get_columns = getattr(inspector, "get_columns")
-    get_fks = getattr(inspector, "get_foreign_keys")
+    get_pk = inspector.get_pk_constraint
+    get_columns = inspector.get_columns
+    get_fks = inspector.get_foreign_keys
 
     columns: list[ColumnInfo] = []
     pk = set(get_pk(name, schema=schema).get("constrained_columns") or [])

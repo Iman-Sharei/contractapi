@@ -22,7 +22,7 @@ def _run(repo: Path, *args: str, timeout: float = 8.0) -> str:
     env["GIT_CONFIG_KEY_0"] = "safe.directory"
     env["GIT_CONFIG_VALUE_0"] = "*"
     try:
-        proc = subprocess.run(  # noqa: S603
+        proc = subprocess.run(
             ["git", *args],
             cwd=str(repo),
             capture_output=True,

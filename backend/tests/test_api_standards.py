@@ -167,4 +167,3 @@ def test_openapi_contract_has_versioned_paths(client: TestClient):
     assert "/metrics" in paths
     get_params = {p["name"] for p in paths["/v1/customers"]["get"].get("parameters", [])}
     assert "limit" in get_params
-    assert "fields" in get_params or True  # fields is query-parsed manually; may be absent from OpenAPI

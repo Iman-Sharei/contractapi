@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, PlainTextResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from contractapi.application.data_api_builder import create_data_app
 from contractapi.application.openapi_diff import diff_openapi
@@ -262,7 +263,8 @@ def studio_preview_openapi(body: OpenApiPreviewRequest) -> dict[str, Any]:
             routes=app.routes,
         )
         return {"valid": True, "errors": [], "openapi": openapi}
-    except Exception as exc:
+    except (SQLAlchemyError, AppError, ValueError, RuntimeError) as exc:
+        # Building the app reflects the DB; when it is unreachable the preview waits.
         return {
             "valid": True,
             "errors": [],

@@ -194,9 +194,7 @@ def _is_public_path(path: str, public_paths: set[str]) -> bool:
     if path in public_paths:
         return True
     # also allow trailing-slash variants
-    if path.endswith("/") and path[:-1] in public_paths:
-        return True
-    return False
+    return bool(path.endswith("/") and path[:-1] in public_paths)
 
 
 def _record_metrics(method: str, path: str, status: int, duration: float) -> None:

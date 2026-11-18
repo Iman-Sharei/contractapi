@@ -58,7 +58,7 @@ def pg():
                 text("CREATE TABLE prod_cmp.items (id serial primary key, order_id int, sku text)")
             )
             conn.execute(text("INSERT INTO prod_cmp.items(order_id, sku) VALUES (1,'s1'),(1,'s2')"))
-    except Exception:  # noqa: BLE001
+    except Exception:
         pytest.skip("Postgres demo unavailable")
     yield
     with engine.begin() as conn:

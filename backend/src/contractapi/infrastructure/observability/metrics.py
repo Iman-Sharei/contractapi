@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
+from collections.abc import Iterable
 from threading import Lock
-from typing import Iterable
 
 
 class MetricsRegistry:

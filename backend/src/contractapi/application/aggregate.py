@@ -16,9 +16,9 @@ __all__ = [
     "AggregateConfig",
     "AggregateMetric",
     "AggregateOp",
+    "aggregate_to_endpoint_patch",
     "compile_aggregate_sql",
     "derived_aggregate_fields",
-    "aggregate_to_endpoint_patch",
 ]
 
 

@@ -147,11 +147,11 @@ def _load_table(engine: Engine, ep: EndpointSpec) -> Table:
     if schema in {"main", "public"}:
         try:
             return Table(ep.table, metadata, autoload_with=engine)
-        except Exception:
-            pass
+        except SQLAlchemyError:
+            metadata = MetaData()  # retry with an explicit schema below
     try:
         return Table(ep.table, metadata, schema=schema, autoload_with=engine)
-    except Exception:
+    except SQLAlchemyError:
         cols = [Column(name, String) for name in ep.fields]
         return Table(ep.table, metadata, *cols, schema=schema)
 

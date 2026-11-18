@@ -98,7 +98,7 @@ class AggregateWindow(BaseModel):
             if not _IDENT.match(col):
                 raise ValueError(f"Unsafe partition_by: {col}")
         for col in self.order_by:
-            raw = col[1:] if col.startswith("-") else col
+            raw = col.removeprefix("-")
             if not _IDENT.match(raw):
                 raise ValueError(f"Unsafe order_by: {col}")
         return self

@@ -43,9 +43,9 @@ def _check(rule: FieldValidation, value: Any) -> str | None:
         if rule.format == "uuid":
             try:
                 UUID(value)
-            except Exception:
+            except (ValueError, AttributeError, TypeError):
                 return "invalid uuid"
-        if rule.format == "uri" and not (value.startswith("http://") or value.startswith("https://")):
+        if rule.format == "uri" and not (value.startswith(("http://", "https://"))):
             return "invalid uri"
     if isinstance(value, (int, float)):
         if rule.ge is not None and value < rule.ge:

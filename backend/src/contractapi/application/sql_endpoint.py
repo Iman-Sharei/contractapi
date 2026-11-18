@@ -15,11 +15,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from contractapi.application.cursor_paging import decode_cursor, encode_cursor
-from contractapi.core.errors import AppError
-from contractapi.infrastructure.db.errors import db_error
 from contractapi.application.query_filters import escape_like
+from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, EndpointSpec, PaginationMode
-
+from contractapi.infrastructure.db.errors import db_error
 
 _IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
@@ -220,7 +219,7 @@ def mount_sql_endpoint(
         cursor: str | None = Query(default=None),
         sort: str | None = Query(default=None),
         include_total: bool = Query(default=False),
-        format: str | None = Query(default=None),  # noqa: A002
+        format: str | None = Query(default=None),
     ) -> Any:
         fields = dab._visible_fields(spec, endpoint, request)
         if not endpoint.pagination.enabled:

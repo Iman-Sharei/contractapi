@@ -123,7 +123,7 @@ def pg_docs():
                     "VALUES ('A','a-doc',100),('B','b-doc',999)"
                 )
             )
-    except Exception:  # noqa: BLE001
+    except Exception:
         pytest.skip("Postgres demo unavailable")
     yield
     with engine.begin() as conn:

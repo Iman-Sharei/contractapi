@@ -262,8 +262,8 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
 
         # GraphQL is GA when strawberry is installed (optional extra).
         mount_graphql(app, engine, spec)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — optional facade must never break the REST API
+        logger.warning("GraphQL facade not mounted: %s", exc)
 
     return app
 

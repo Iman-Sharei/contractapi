@@ -11,7 +11,6 @@ from contractapi.core.config import get_settings
 from contractapi.infrastructure.runtime_store import clear_active
 from contractapi.interfaces.http.app_factory import create_studio_app
 
-
 DB = "postgresql://postgres:postgres@localhost:5433/app"
 
 

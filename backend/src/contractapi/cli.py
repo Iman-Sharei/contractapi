@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 import uvicorn
@@ -115,7 +114,7 @@ def diff_cmd(
 @app.command("serve")
 @app.command("run")
 def run_cmd(
-    config: Optional[Path] = typer.Argument(None),
+    config: Path | None = typer.Argument(None),
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port"),
     studio: bool = typer.Option(
@@ -191,7 +190,7 @@ def init_cmd(
 
 @app.command("doctor")
 def doctor_cmd(
-    database_url: Optional[str] = typer.Option(None, "--url", "-u", envvar="DATABASE_URL"),
+    database_url: str | None = typer.Option(None, "--url", "-u", envvar="DATABASE_URL"),
 ) -> None:
     """Quick health checks for local development."""
     from contractapi.core.config import get_settings

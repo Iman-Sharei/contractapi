@@ -182,7 +182,7 @@ def test_graphql_mutations_create_update_delete():
 def test_create_data_app_invokes_mount_graphql(monkeypatch: pytest.MonkeyPatch):
     called: dict[str, bool] = {}
 
-    def _fake_mount(app, engine, spec):  # noqa: ANN001
+    def _fake_mount(app, engine, spec):
         called["yes"] = True
 
     monkeypatch.setattr(

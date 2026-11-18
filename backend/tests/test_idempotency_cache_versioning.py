@@ -37,8 +37,9 @@ def test_api_prefix_versioning_and_metrics():
     # Use sqlite-less path: only check routing shape without DB for /health/metrics
     # Health does not need DB; metrics always available.
     # For versioned routes we need DB — skip body if unavailable via try.
-    from contractapi.infrastructure.db.engine import create_pg_engine
     from sqlalchemy import text
+
+    from contractapi.infrastructure.db.engine import create_pg_engine
 
     try:
         engine = create_pg_engine(
@@ -65,9 +66,11 @@ def test_api_prefix_versioning_and_metrics():
 
 
 def test_idempotency_replay_and_conflict():
-    from contractapi.infrastructure.db.engine import create_pg_engine
-    from sqlalchemy import text
     import uuid
+
+    from sqlalchemy import text
+
+    from contractapi.infrastructure.db.engine import create_pg_engine
 
     try:
         engine = create_pg_engine(
@@ -106,8 +109,9 @@ def test_idempotency_replay_and_conflict():
 
 
 def test_cache_hit_on_second_get():
-    from contractapi.infrastructure.db.engine import create_pg_engine
     from sqlalchemy import text
+
+    from contractapi.infrastructure.db.engine import create_pg_engine
     from contractapi.infrastructure.observability import metrics
 
     try:

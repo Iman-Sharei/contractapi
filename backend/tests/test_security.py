@@ -1,7 +1,8 @@
+import pytest
+
+from contractapi.core.errors import AppError
 from contractapi.domain.sensitive import find_sensitive_columns, is_sensitive_column
 from contractapi.infrastructure.security.rate_limit import SlidingWindowRateLimiter
-from contractapi.core.errors import AppError
-import pytest
 
 
 def test_sensitive_detection():

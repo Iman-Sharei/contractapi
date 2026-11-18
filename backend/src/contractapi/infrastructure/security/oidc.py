@@ -54,7 +54,7 @@ def _discover(issuer: str) -> dict[str, Any]:
     if cached and cached[0] > now:
         return cached[1]
     url = issuer.rstrip("/") + "/.well-known/openid-configuration"
-    with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310
+    with urllib.request.urlopen(url, timeout=5) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     _discovery_cache[issuer] = (now + 3600, data)
     return data
@@ -91,14 +91,14 @@ def exchange_code_for_tokens(
             **({"code_verifier": code_verifier} if code_verifier else {}),
         }
     ).encode("utf-8")
-    req = urllib.request.Request(  # noqa: S310
+    req = urllib.request.Request(
         token_url,
         data=body,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:300]
@@ -187,7 +187,7 @@ def verify_studio_oidc_token(token: str, settings: Settings | None = None) -> di
             # Without an audience check any token from this issuer (e.g. any Google
             # account, minted for any app) would unlock Studio.
             raise jwt.InvalidAudienceError("token not issued for this Studio client")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.info("OIDC token rejected: %s", exc.__class__.__name__)
         raise AppError(
             type_="https://contractapi.dev/problems/unauthorized",

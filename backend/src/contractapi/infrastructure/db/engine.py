@@ -48,7 +48,7 @@ def create_pg_engine(url: str, *, pooled: bool = True) -> Engine:
             cursor = dbapi_connection.cursor()
             cursor.execute(f"SET statement_timeout = {settings.db_statement_timeout_ms}")
             cursor.close()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 — e.g. poolers rejecting SET; connect_args already set it
             pass
 
     return engine
