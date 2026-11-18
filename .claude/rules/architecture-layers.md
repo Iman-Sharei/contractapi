@@ -13,7 +13,7 @@ Layered; dependencies point inward only.
 ## Rules
 
 - **Business rules live in `application/` (or `domain/`)**, not in routers, Pydantic schemas or middleware. A router parses input, calls one function, returns the result.
-- **Spec validity is enforced in `domain/models/spec.py`** (`validate_contract` etc.), so YAML, CLI and Studio all get the same checks. Don't re-validate differently in routers.
+- **Spec validity is enforced in `domain/models/`** (`endpoint.py` `validate_contract`, `spec.py` `ApiSpec` invariants, `rules.py`), so YAML, CLI and Studio all get the same checks. Don't re-validate differently in routers.
 - **Never build SQL by f-string with user input.** Use SQLAlchemy Core/`text()` with bound params; identifiers only after allowlist/`_quote_*` checks against the spec/introspected columns.
 - Settings only via `core.config.get_settings()`; no `os.environ` reads elsewhere.
 - Optional extras (redis, parquet, duckdb, graphql, oidc, snowflake, bigquery) are **imported lazily** inside the function that needs them and fail with a Problem Details `dependency-missing` error, never an `ImportError` to the client.
@@ -21,10 +21,12 @@ Layered; dependencies point inward only.
 
 ## File size (~300 lines)
 
-When a module exceeds **~300 lines**, split by domain/resource into a package whose `__init__.py` re-exports the public names so existing imports keep working. New code that would push a file past the limit goes in a new module. Existing oversized files (`application/data_api_builder.py`, `domain/models/spec.py`, `interfaces/http/studio/router.py`) — when you touch them substantially, extract the part you're changing (e.g. per-feature route builders) instead of growing them. Skip tiny helpers.
+When a module exceeds **~300 lines**, split by domain/resource into a package whose `__init__.py` re-exports the public names so existing imports keep working. New code that would push a file past the limit goes in a new module. Keep public import paths stable when splitting (`data_api_builder.py` and `domain/models/spec.py` re-export their old names). Skip tiny helpers.
 
 ## Web (`apps/web/src`)
 
-- `app/` routes (Next.js App Router), `components/studio/` UI, `lib/` pure helpers (`api.ts` client, `buildYaml.ts`, `formatError.ts`, `types.ts`) with a colocated `*.test.ts`.
+- `app/` routes (Next.js App Router), `components/studio/` UI, `lib/` pure helpers (`api.ts` client, `yaml.ts`, `snippets.ts`, `safetyChecks.ts`, `pathRules.ts`, `studioAuth.ts`, `types.ts`) with a colocated `*.test.ts`.
+- Editor: `components/studio/editor/useEditorCore.tsx` (state + base mutators), action groups (`*Actions.ts`), composed by `useEditorState.tsx`; tabs/sections take `{ s: EditorState }`.
+- BFF (`app/api/*`): signed session cookie (`lib/studioAuth.ts`); never put secrets in `NEXT_PUBLIC_*`.
 - UI logic that maps form state ⇄ YAML belongs in `lib/` (testable with vitest), not inside components.
 - `lib/types.ts` mirrors the backend spec; change both together.

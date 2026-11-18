@@ -30,4 +30,4 @@ DB (Postgres/DuckDB/…) ─introspect─► Studio UI / YAML contract ─activa
 
 ## When adding a feature
 
-Touch, in order: `domain/models/spec.py` (field + validation) → `application/` (behavior) → `interfaces/http` (route/schema) → Studio UI (control + helper text) → `backend/examples/*.yaml` → tests → `CHANGELOG.md` (+ `docs/UPGRADING.md` if YAML-breaking).
+Touch, in order: `domain/models/` (field + validation) → `application/` (behavior) → `interfaces/http` (route/schema) → Studio UI (control + helper text) → `backend/examples/*.yaml` → tests → `CHANGELOG.md` (+ `docs/UPGRADING.md` if YAML-breaking).

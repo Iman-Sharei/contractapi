@@ -4,7 +4,7 @@ Every data-plane **write** and every security-relevant outcome emits an audit ev
 
 ## Where
 
-- Data plane: through the `_audit(spec, action, endpoint, request, ...)` helper in `application/data_api_builder.py`. It honors `spec.app.audit_enabled` and attaches the principal (`sub`, `roles`). Call it **after** the outcome succeeds.
+- Data plane: through the `_audit(spec, action, endpoint, request, ...)` helper in `application/data_api/common.py`. It honors `spec.app.audit_enabled` and attaches the principal (`sub`, `roles`). Call it **after** the outcome succeeds.
 - Control plane (activate, save/delete spec, API-key create/revoke, token issue, promote): call `audit_event` from the `application/` function that owns the outcome.
 - **Not** in routers' parsing code, Pydantic schemas, or domain models.
 

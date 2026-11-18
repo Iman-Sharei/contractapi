@@ -14,7 +14,7 @@ Apply on every task. Baselines: OWASP API Security Top 10 (2023), RFC 9457, Zala
 | Plane | Auth | Where |
 |---|---|---|
 | **Studio control plane** `/studio/*` | `require_studio_api_key` (X-API-Key break-glass, OIDC Bearer, OIDC httpOnly cookie) | `infrastructure/security/auth.py`, router-level `dependencies` |
-| **Data plane** `/data`, `/apis/{name}` | per-spec `AuthMode` (API key / JWT / none-if-explicit) + RBAC + row-level | `data_api_builder.py` |
+| **Data plane** `/data`, `/apis/{name}` | per-spec `AuthMode` (API key / JWT / none-if-explicit) + RBAC + row-level | `application/data_api/` |
 
 - Never add a Studio route outside the gated router. Never weaken `require_studio_api_key`.
 - Compare secrets with `hmac.compare_digest` (see `_constant_time_equals`). No `==` on keys/tokens.
