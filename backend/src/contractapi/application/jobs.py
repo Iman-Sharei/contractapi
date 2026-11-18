@@ -27,11 +27,24 @@ class Job:
     updated_at: float = field(default_factory=time.time)
     kind: str | None = None
     payload: dict[str, Any] | None = None
+    owner: str | None = None  # "<api namespace>:<caller>" — only the owner may read it
 
 
 _jobs: dict[str, Job] = {}
 _lock = threading.Lock()
 _local_fns: dict[str, Callable[[], Any]] = {}
+_MAX_LOCAL_JOBS = 5_000
+
+
+def _prune_locked() -> None:
+    """Keep the in-process registry bounded: drop finished/expired jobs, then the oldest."""
+    cutoff = time.time() - JOB_TTL_SECONDS
+    for jid in [j.id for j in _jobs.values() if j.updated_at < cutoff or j.status in {"succeeded", "failed"}]:
+        if len(_jobs) <= _MAX_LOCAL_JOBS // 2:
+            break
+        _jobs.pop(jid, None)
+    while len(_jobs) > _MAX_LOCAL_JOBS:
+        _jobs.pop(min(_jobs.values(), key=lambda j: j.created_at).id, None)
 
 
 def _job_key(job_id: str) -> str:
@@ -56,6 +69,7 @@ def _persist(job: Job) -> None:
                 "updated_at": job.updated_at,
                 "kind": job.kind,
                 "payload": job.payload,
+                "owner": job.owner,
             },
             JOB_TTL_SECONDS,
         )
@@ -82,16 +96,21 @@ def _load_remote(job_id: str) -> Job | None:
             updated_at=float(raw.get("updated_at") or time.time()),
             kind=raw.get("kind"),
             payload=raw.get("payload"),
+            owner=raw.get("owner"),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to load job %s: %s", job_id, exc)
         return None
 
 
-def create_job(*, kind: str | None = None, payload: dict[str, Any] | None = None) -> Job:
-    job = Job(id=str(uuid.uuid4()), kind=kind, payload=payload)
+def create_job(
+    *, kind: str | None = None, payload: dict[str, Any] | None = None, owner: str | None = None
+) -> Job:
+    job = Job(id=str(uuid.uuid4()), kind=kind, payload=payload, owner=owner)
     with _lock:
         _jobs[job.id] = job
+        if len(_jobs) > _MAX_LOCAL_JOBS:
+            _prune_locked()
     _persist(job)
     return job
 
@@ -128,6 +147,7 @@ def _set_status(job_id: str, *, status: str, result: Any = None, error: str | No
             updated_at=job.updated_at,
             kind=job.kind,
             payload=job.payload,
+            owner=job.owner,
         )
     _persist(snapshot)
 

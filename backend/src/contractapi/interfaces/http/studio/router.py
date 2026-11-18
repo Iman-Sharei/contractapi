@@ -18,6 +18,7 @@ from contractapi.application.studio_service import (
 )
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, dump_spec, parse_spec
+from contractapi.infrastructure.db.errors import safe_db_message
 from contractapi.infrastructure.persistence import spec_repo
 from contractapi.infrastructure.security.auth import require_studio_api_key
 from contractapi.infrastructure.security.jwt_tokens import issue_token
@@ -265,7 +266,7 @@ def studio_preview_openapi(body: OpenApiPreviewRequest) -> dict[str, Any]:
         return {
             "valid": True,
             "errors": [],
-            "warnings": [f"OpenAPI preview deferred until DB is reachable: {exc}"],
+            "warnings": [f"OpenAPI preview deferred until DB is reachable: {safe_db_message(exc)}"],
             "openapi": None,
         }
 
@@ -307,10 +308,12 @@ def studio_export_openapi(name: str) -> JSONResponse:
     try:
         doc = spec_repo.export_openapi_dict(spec)
     except Exception as exc:
-        return JSONResponse(
-            status_code=400,
-            content={"detail": f"Cannot export OpenAPI (is DB reachable?): {exc}"},
-        )
+        raise AppError(
+            type_="https://contractapi.dev/problems/database-unreachable",
+            title="Cannot export OpenAPI",
+            status=400,
+            detail=f"The database must be reachable to export OpenAPI: {safe_db_message(exc)}",
+        ) from exc
     return JSONResponse(doc)
 
 
@@ -383,7 +386,7 @@ def studio_sql_preview(body: SqlPreviewRequest) -> dict[str, Any]:
             type_="https://contractapi.dev/problems/sql-preview-failed",
             title="SQL preview failed",
             status=400,
-            detail=str(exc),
+            detail=safe_db_message(exc),
         ) from exc
     return {"columns": columns, "count": len(columns)}
 

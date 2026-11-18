@@ -185,6 +185,10 @@ def create_studio_app() -> FastAPI:
     settings = get_settings()
     setup_logging(debug=settings.debug)
     settings.assert_production_safe()
+    from contractapi.infrastructure.security.oidc import oidc_config_problems
+
+    if problems := oidc_config_problems(settings):
+        raise RuntimeError("Refusing to start: " + "; ".join(problems))
     _restore_runtime()
     # Job queue is GA when JOB_QUEUE_ENABLED + REDIS_URL (optional Redis worker).
     if settings.job_queue_enabled and settings.redis_url:

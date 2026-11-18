@@ -18,6 +18,7 @@ from contractapi.infrastructure.security.oidc import (
     oidc_cookie_name,
     oidc_discovery,
     oidc_enabled,
+    pkce_pair,
     verify_studio_oidc_token,
 )
 
@@ -25,6 +26,14 @@ router = APIRouter(prefix="/studio/oidc", tags=["studio-oidc"])
 
 _STATE_COOKIE = "contractapi_oidc_state"
 _STATE_TTL = 600
+
+
+def safe_return_to(value: str | None) -> str:
+    """Only same-site absolute paths (blocks //evil.com and /\\evil.com open redirects)."""
+    v = (value or "").strip()
+    if not v.startswith("/") or v.startswith(("//", "/\\")) or "\n" in v or "|" in v:
+        return "/studio"
+    return v
 
 
 @router.get("/config")
@@ -63,13 +72,17 @@ def oidc_login(request: Request, return_to: str = "/studio") -> Response:
             detail="authorization_endpoint missing from discovery document.",
         )
     state = secrets.token_urlsafe(24)
-    # encode return_to in state payload via separate cookie
+    nonce = secrets.token_urlsafe(24)
+    verifier, challenge = pkce_pair()
     params = {
         "response_type": "code",
         "client_id": s.studio_oidc_client_id.strip(),
         "redirect_uri": s.studio_oidc_redirect_uri.strip(),
         "scope": "openid email profile",
         "state": state,
+        "nonce": nonce,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
     }
     if s.studio_oidc_audience.strip():
         params["audience"] = s.studio_oidc_audience.strip()
@@ -78,7 +91,8 @@ def oidc_login(request: Request, return_to: str = "/studio") -> Response:
     secure = bool(s.studio_oidc_cookie_secure)
     resp.set_cookie(
         _STATE_COOKIE,
-        f"{state}|{return_to}|{int(time.time())}",
+        # httpOnly, short-lived; binds this browser to the login it started (CSRF/replay).
+        f"{state}|{safe_return_to(return_to)}|{int(time.time())}|{nonce}|{verifier}",
         httponly=True,
         secure=secure,
         samesite="lax",
@@ -111,40 +125,51 @@ def oidc_callback(
             detail="Missing code/state from IdP callback.",
         )
     raw_state = request.cookies.get(_STATE_COOKIE) or ""
-    parts = raw_state.split("|", 2)
-    if len(parts) < 2 or parts[0] != state:
+    parts = raw_state.split("|")
+    if len(parts) != 5 or not secrets.compare_digest(parts[0], state):
         raise AppError(
             type_="https://contractapi.dev/problems/unauthorized",
             title="Unauthorized",
             status=401,
-            detail="Invalid OIDC state.",
+            detail="Invalid OIDC state. Please sign in again.",
         )
-    if len(parts) == 3:
-        try:
-            if int(parts[2]) + _STATE_TTL < time.time():
-                raise ValueError("expired")
-        except ValueError as exc:
-            raise AppError(
-                type_="https://contractapi.dev/problems/unauthorized",
-                title="Unauthorized",
-                status=401,
-                detail="OIDC state expired.",
-            ) from exc
-    return_to = parts[1] if len(parts) > 1 else "/studio"
-    if not return_to.startswith("/"):
-        return_to = "/studio"
+    _, return_to, issued, nonce, verifier = parts
+    try:
+        if int(issued) + _STATE_TTL < time.time():
+            raise ValueError("expired")
+    except ValueError as exc:
+        raise AppError(
+            type_="https://contractapi.dev/problems/unauthorized",
+            title="Unauthorized",
+            status=401,
+            detail="OIDC login took too long. Please sign in again.",
+        ) from exc
+    return_to = safe_return_to(return_to)
 
-    tokens = exchange_code_for_tokens(code, s)
-    access = tokens.get("access_token") or tokens.get("id_token")
-    if not access:
+    tokens = exchange_code_for_tokens(code, s, code_verifier=verifier)
+    id_token = tokens.get("id_token")
+    if not id_token:
         raise AppError(
             type_="https://contractapi.dev/problems/unauthorized",
             title="Unauthorized",
             status=401,
-            detail="IdP did not return an access_token.",
+            detail="The identity provider did not return an id_token.",
         )
-    # Validate before setting cookie
-    verify_studio_oidc_token(str(access), s)
+    # id_token proves this login: issued for our client_id and carrying the nonce we sent.
+    id_claims = verify_studio_oidc_token(str(id_token), s)["claims"]
+    if not secrets.compare_digest(str(id_claims.get("nonce") or ""), nonce):
+        raise AppError(
+            type_="https://contractapi.dev/problems/unauthorized",
+            title="Unauthorized",
+            status=401,
+            detail="OIDC nonce mismatch. Please sign in again.",
+        )
+    # Cookie value must pass the same check every Studio request applies.
+    access = tokens.get("access_token") or id_token
+    try:
+        verify_studio_oidc_token(str(access), s)
+    except AppError:
+        access = id_token
 
     # Prefer frontend origin redirect when configured
     base = (s.studio_oidc_post_login_url or "").strip().rstrip("/")

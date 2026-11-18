@@ -35,6 +35,14 @@ def _quote_ident(name: str) -> str:
     return f'"{name}"'
 
 
+def begin_read_only(conn: Any) -> None:
+    """Postgres: run custom SQL in a READ ONLY transaction, so even side-effecting
+    functions (nextval, pg_terminate_backend, dblink_exec…) cannot change data.
+    Must be the first statement of the transaction. Other drivers keep the keyword guard."""
+    if conn.dialect.name == "postgresql":
+        conn.execute(text("SET TRANSACTION READ ONLY"))
+
+
 def _inner_sql(endpoint: EndpointSpec) -> str:
     return (endpoint.sql or "").strip().rstrip(";").strip()
 
@@ -260,6 +268,7 @@ def mount_sql_endpoint(
         total = None
         try:
             with engine.connect() as conn:
+                begin_read_only(conn)
                 if include_total or mode != PaginationMode.CURSOR:
                     where_only, filter_params = _build_where(request, endpoint, reserved=reserved)
                     count_sql = f"SELECT COUNT(*) FROM ({inner}) AS q{where_only}"
@@ -337,6 +346,7 @@ def mount_sql_endpoint(
         )
         try:
             with engine.connect() as conn:
+                begin_read_only(conn)
                 row = conn.execute(text(sql), {"id": item_id}).mappings().first()
         except SQLAlchemyError as exc:
             raise db_error(exc) from exc
@@ -383,5 +393,6 @@ def preview_sql_columns(
     inner = sql.strip().rstrip(";").strip()
     q = text(f"SELECT * FROM ({inner}) AS q LIMIT 0")
     with engine.connect() as conn:
+        begin_read_only(conn)
         result = conn.execute(q, bind or {})
         return list(result.keys())

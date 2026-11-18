@@ -252,6 +252,9 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
                 return resp
 
         response = await call_next(request)
+        lock = getattr(request.state, "idem_lock", None)
+        if lock and response.status_code >= 400:
+            idempotency_store.release(lock)  # failed write: let the client retry the same key
         _decorate_response(response, spec, trace_id, rate_info)
         duration = timer.seconds()
         _record_metrics(request.method, path, response.status_code, duration)
@@ -329,10 +332,11 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
             revoke_token(str(token), spec.app.jwt)
             return {"revoked": True}
 
-    @app.get("/jobs/{job_id}", tags=["jobs"])
-    def job_status(job_id: str) -> dict[str, Any]:
+    @app.get("/jobs/{job_id}", tags=["jobs"], summary="Status of an async write you submitted")
+    def job_status(job_id: str, request: Request) -> dict[str, Any]:
         job = get_job(job_id)
-        if not job:
+        # 404 (not 403) for other callers' jobs: do not reveal that the id exists.
+        if not job or (job.owner and job.owner != _job_owner(spec, request)):
             raise AppError(
                 type_="https://contractapi.dev/problems/not-found",
                 title="Not Found",
@@ -365,6 +369,11 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
         pass
 
     return app
+
+
+def _job_owner(spec: ApiSpec, request: Request) -> str:
+    principal = getattr(request.state, "principal", {}) or {}
+    return f"{spec.namespace}:{principal.get('sub') or 'anon'}"
 
 
 def _ensure_trace(request: Request) -> str:
@@ -829,7 +838,7 @@ def _add_list(
                     type_="https://contractapi.dev/problems/relation-error",
                     title="Relation load failed",
                     status=500,
-                    detail=str(exc),
+                    detail="Nested data could not be loaded. Check the relation settings in Studio.",
                 ) from exc
 
         projected = [
@@ -946,7 +955,15 @@ def _add_detail(
             # projected view — otherwise relations/RBAC/sparse fields break concurrency control.
             etag = _etag_for(item, endpoint)
             if endpoint.relations:
-                load_relations(engine, metadata, endpoint.relations, [item])
+                try:
+                    load_relations(engine, metadata, endpoint.relations, [item])
+                except SQLAlchemyError as exc:
+                    raise AppError(
+                        type_="https://contractapi.dev/problems/relation-error",
+                        title="Relation load failed",
+                        status=500,
+                        detail="Nested data could not be loaded. Check the relation settings in Studio.",
+                    ) from exc
             projected = _project_fields(item, fields, rel_names)
             if spec.app.cache.enabled:
                 response_cache.set(
@@ -1020,11 +1037,22 @@ def _idempotency_replay_or_conflict(
     method: str,
     path: str,
     payload: dict[str, Any],
+    request: Request,
 ) -> Response | None:
     body = serialize_json_body(payload)
     fp = fingerprint_payload(method, path, body)
     existing = idempotency_store.get(store_key)
     if existing is None:
+        # First request with this key: reserve it atomically so a concurrent duplicate
+        # gets 409 instead of performing the write twice. Released on commit or on error.
+        if not idempotency_store.claim(store_key):
+            raise AppError(
+                type_="https://contractapi.dev/problems/idempotency-in-progress",
+                title="Request in progress",
+                status=409,
+                detail="A request with this Idempotency-Key is still being processed. Retry shortly.",
+            )
+        request.state.idem_lock = store_key
         return None
     if existing.fingerprint != fp:
         raise AppError(
@@ -1069,6 +1097,7 @@ def _idempotency_commit(
             created_at=__import__("time").monotonic(),
         ),
     )
+    idempotency_store.release(store_key)
 
 
 def _validate_write_body(raw: Any, write_model: type[BaseModel]) -> dict[str, Any]:
@@ -1131,7 +1160,7 @@ def _add_create(router, engine, table, endpoint, spec, item_model, write_model, 
             request, spec=spec, endpoint=endpoint, method="POST", path=path, payload=payload
         )
         if store_key:
-            replay = _idempotency_replay_or_conflict(store_key, method="POST", path=path, payload=payload)
+            replay = _idempotency_replay_or_conflict(store_key, method="POST", path=path, payload=payload, request=request)
             if replay is not None:
                 return replay
 
@@ -1148,7 +1177,7 @@ def _add_create(router, engine, table, endpoint, spec, item_model, write_model, 
                 "path": endpoint.path,
                 "row": payload,
             }
-            job = create_job(kind="insert", payload=job_payload)
+            job = create_job(kind="insert", payload=job_payload, owner=_job_owner(spec, request))
 
             def work() -> dict[str, Any]:
                 result = _do_insert(engine, table, endpoint, payload)
@@ -1292,7 +1321,7 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
             request, spec=spec, endpoint=endpoint, method=method, path=path, payload=payload
         )
         if store_key:
-            replay = _idempotency_replay_or_conflict(store_key, method=method, path=path, payload=payload)
+            replay = _idempotency_replay_or_conflict(store_key, method=method, path=path, payload=payload, request=request)
             if replay is not None:
                 return replay
 
@@ -1394,7 +1423,7 @@ def _add_delete(router, engine, table, endpoint, spec, tags) -> None:  # type: i
             request, spec=spec, endpoint=endpoint, method="DELETE", path=path, payload=payload
         )
         if store_key:
-            replay = _idempotency_replay_or_conflict(store_key, method="DELETE", path=path, payload=payload)
+            replay = _idempotency_replay_or_conflict(store_key, method="DELETE", path=path, payload=payload, request=request)
             if replay is not None:
                 return replay
 

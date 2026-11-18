@@ -61,7 +61,7 @@ try:
     @strawberry.type
     class Query:
         @strawberry.field
-        def endpoint(
+        async def endpoint(
             self,
             info: Info,
             name: str,
@@ -71,8 +71,9 @@ try:
             roles: list[str] | None = None,
         ) -> list[JSON]:
             """`roles` can only narrow to a subset of the caller's token roles."""
-            return _resolve_endpoint_rows(
-                info, name, limit, params, include_relations, roles or None
+            # Blocking DB work runs in a thread so it never stalls the event loop.
+            return await asyncio.to_thread(
+                _resolve_endpoint_rows, info, name, limit, params, include_relations, roles or None
             )
 
         @strawberry.field
@@ -86,21 +87,18 @@ try:
     @strawberry.type
     class Mutation:
         @strawberry.field
-        def create_item(self, info: Info, endpoint: str, data: JSON) -> JSON:
-            return _mutate_create(info, endpoint, data if isinstance(data, dict) else {})
+        async def create_item(self, info: Info, endpoint: str, data: JSON) -> JSON:
+            payload = data if isinstance(data, dict) else {}
+            return await asyncio.to_thread(_mutate_create, info, endpoint, payload)
 
         @strawberry.field
-        def update_item(self, info: Info, endpoint: str, id: JSON, data: JSON) -> JSON:
-            return _mutate_update(
-                info,
-                endpoint,
-                id,
-                data if isinstance(data, dict) else {},
-            )
+        async def update_item(self, info: Info, endpoint: str, id: JSON, data: JSON) -> JSON:
+            payload = data if isinstance(data, dict) else {}
+            return await asyncio.to_thread(_mutate_update, info, endpoint, id, payload)
 
         @strawberry.field
-        def delete_item(self, info: Info, endpoint: str, id: JSON) -> JSON:
-            return _mutate_delete(info, endpoint, id)
+        async def delete_item(self, info: Info, endpoint: str, id: JSON) -> JSON:
+            return await asyncio.to_thread(_mutate_delete, info, endpoint, id)
 
     @strawberry.type
     class Subscription:
@@ -117,8 +115,8 @@ try:
             """Poll-based subscription MVP (WebSocket)."""
             delay = max(0.5, min(float(interval_seconds), 30.0))
             while True:
-                yield _resolve_endpoint_rows(
-                    info, name, limit, None, include_relations, roles or None
+                yield await asyncio.to_thread(
+                    _resolve_endpoint_rows, info, name, limit, None, include_relations, roles or None
                 )
                 await asyncio.sleep(delay)
 
@@ -180,7 +178,10 @@ def _fetch_sql_rows(
             raise ValueError(f"Missing required SQL param '{p.name}'.")
         elif p.default is not None:
             params[p.name] = p.default
+    from contractapi.application.sql_endpoint import begin_read_only
+
     with engine.connect() as conn:
+        begin_read_only(conn)
         rows = conn.execute(sql, params).mappings().all()
     return [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows]
 

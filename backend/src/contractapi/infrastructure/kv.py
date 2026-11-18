@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import OrderedDict
 from threading import Lock
 from typing import Any, Protocol
 
@@ -16,30 +17,57 @@ logger = get_logger("contractapi.kv")
 class KvStore(Protocol):
     def get(self, key: str) -> str | None: ...
     def set(self, key: str, value: str, ttl_seconds: int) -> None: ...
+    def set_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool: ...
     def delete(self, key: str) -> None: ...
     def delete_prefix(self, prefix: str) -> int: ...
 
 
 class MemoryKv:
-    def __init__(self) -> None:
-        self._data: dict[str, tuple[str, float]] = {}
+    """Process-local TTL store with a hard entry cap.
+
+    ponytail: evicts expired entries, then the least recently written ones, when full.
+    Ceiling: per-process and O(n) sweep when full; use REDIS_URL for multi-worker deploys.
+    """
+
+    def __init__(self, max_entries: int | None = None) -> None:
+        self._data: OrderedDict[str, tuple[str, float]] = OrderedDict()
         self._lock = Lock()
+        self._max = max_entries or get_settings().memory_kv_max_entries
+
+    def _alive(self, key: str, now: float) -> str | None:
+        item = self._data.get(key)
+        if not item:
+            return None
+        value, expires = item
+        if expires < now:
+            del self._data[key]
+            return None
+        return value
+
+    def _put(self, key: str, value: str, ttl_seconds: int, now: float) -> None:
+        self._data[key] = (value, now + max(ttl_seconds, 1))
+        self._data.move_to_end(key)
+        if len(self._data) > self._max:
+            for k in [k for k, (_, exp) in self._data.items() if exp < now]:
+                del self._data[k]
+            while len(self._data) > self._max:
+                self._data.popitem(last=False)
 
     def get(self, key: str) -> str | None:
-        now = time.monotonic()
         with self._lock:
-            item = self._data.get(key)
-            if not item:
-                return None
-            value, expires = item
-            if expires < now:
-                del self._data[key]
-                return None
-            return value
+            return self._alive(key, time.monotonic())
 
     def set(self, key: str, value: str, ttl_seconds: int) -> None:
         with self._lock:
-            self._data[key] = (value, time.monotonic() + max(ttl_seconds, 1))
+            self._put(key, value, ttl_seconds, time.monotonic())
+
+    def set_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            if self._alive(key, now) is not None:
+                return False
+            self._put(key, value, ttl_seconds, now)
+            return True
 
     def delete(self, key: str) -> None:
         with self._lock:
@@ -64,6 +92,9 @@ class RedisKv:
 
     def set(self, key: str, value: str, ttl_seconds: int) -> None:
         self._client.setex(key, max(ttl_seconds, 1), value)
+
+    def set_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
+        return bool(self._client.set(key, value, ex=max(ttl_seconds, 1), nx=True))
 
     def delete(self, key: str) -> None:
         self._client.delete(key)

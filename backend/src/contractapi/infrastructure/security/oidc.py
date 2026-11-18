@@ -7,7 +7,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from functools import lru_cache
 from typing import Any
 
 import jwt
@@ -61,7 +60,9 @@ def _discover(issuer: str) -> dict[str, Any]:
     return data
 
 
-def exchange_code_for_tokens(code: str, settings: Settings | None = None) -> dict[str, Any]:
+def exchange_code_for_tokens(
+    code: str, settings: Settings | None = None, *, code_verifier: str | None = None
+) -> dict[str, Any]:
     """Authorization-code exchange for browser OIDC cookie login."""
     s = settings or get_settings()
     if not oidc_browser_enabled(s):
@@ -86,7 +87,8 @@ def exchange_code_for_tokens(code: str, settings: Settings | None = None) -> dic
             "code": code,
             "redirect_uri": s.studio_oidc_redirect_uri.strip(),
             "client_id": s.studio_oidc_client_id.strip(),
-            "client_secret": s.studio_oidc_client_secret,
+            **({"client_secret": s.studio_oidc_client_secret} if s.studio_oidc_client_secret else {}),
+            **({"code_verifier": code_verifier} if code_verifier else {}),
         }
     ).encode("utf-8")
     req = urllib.request.Request(  # noqa: S310
@@ -104,7 +106,7 @@ def exchange_code_for_tokens(code: str, settings: Settings | None = None) -> dic
             type_="https://contractapi.dev/problems/unauthorized",
             title="Unauthorized",
             status=401,
-            detail=f"Token exchange failed: {detail}",
+            detail=f"Token exchange failed at the identity provider: {detail}",
         ) from exc
 
 
@@ -125,6 +127,40 @@ def _jwks_client(settings: Settings) -> PyJWKClient:
     return _jwks_clients[jwks_url]
 
 
+def _issued_for_client(claims: dict[str, Any], client_id: str) -> bool:
+    if not client_id:
+        return False
+    aud = claims.get("aud")
+    auds = aud if isinstance(aud, list) else [aud]
+    return client_id in auds or claims.get("azp") == client_id
+
+
+def oidc_config_problems(settings: Settings | None = None) -> list[str]:
+    s = settings or get_settings()
+    if not oidc_enabled(s):
+        return []
+    if not s.studio_oidc_audience.strip() and not s.studio_oidc_client_id.strip():
+        return [
+            (
+                "STUDIO_OIDC_ISSUER is set but neither STUDIO_OIDC_AUDIENCE nor "
+                "STUDIO_OIDC_CLIENT_ID is: any token from that issuer would be accepted"
+            )
+        ]
+    return []
+
+
+def pkce_pair() -> tuple[str, str]:
+    """(code_verifier, S256 code_challenge) per RFC 7636."""
+    import base64
+    import hashlib
+    import secrets
+
+    verifier = secrets.token_urlsafe(48)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return verifier, challenge
+
+
 def verify_studio_oidc_token(token: str, settings: Settings | None = None) -> dict[str, Any]:
     """Validate Bearer access/ID token against configured IdP JWKS."""
     s = settings or get_settings()
@@ -138,15 +174,19 @@ def verify_studio_oidc_token(token: str, settings: Settings | None = None) -> di
     try:
         client = _jwks_client(s)
         signing_key = client.get_signing_key_from_jwt(token)
-        options = {"verify_aud": bool(s.studio_oidc_audience.strip())}
+        audience = s.studio_oidc_audience.strip()
         claims = jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256", "ES256", "PS256"],
-            audience=s.studio_oidc_audience.strip() or None,
+            audience=audience or None,
             issuer=s.studio_oidc_issuer.strip(),
-            options=options,
+            options={"verify_aud": bool(audience)},
         )
+        if not audience and not _issued_for_client(claims, s.studio_oidc_client_id.strip()):
+            # Without an audience check any token from this issuer (e.g. any Google
+            # account, minted for any app) would unlock Studio.
+            raise jwt.InvalidAudienceError("token not issued for this Studio client")
     except Exception as exc:  # noqa: BLE001
         logger.info("OIDC token rejected: %s", exc.__class__.__name__)
         raise AppError(
@@ -173,9 +213,3 @@ def verify_studio_oidc_token(token: str, settings: Settings | None = None) -> di
         "auth_mode": "oidc",
         "claims": claims,
     }
-
-
-@lru_cache
-def _settings_fingerprint() -> str:
-    s = get_settings()
-    return f"{s.studio_oidc_issuer}|{s.studio_oidc_jwks_url}|{s.studio_oidc_audience}"

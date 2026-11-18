@@ -24,6 +24,14 @@
    otherwise the proxy's own address is checked.
 10. **Git browser:** the `repo` query parameter is gone; set `GIT_REPO_PATH` on the server.
 11. **Filters/sort with RBAC:** callers can only filter/sort on fields their role can see.
+12. **Studio OIDC:** set `STUDIO_OIDC_CLIENT_ID` (or `STUDIO_OIDC_AUDIENCE`) whenever
+    `STUDIO_OIDC_ISSUER` is set — otherwise the server will not start. Your IdP client must allow
+    PKCE (S256); public clients no longer need a client secret.
+13. **Webhooks to internal services** (e.g. `http://my-service:8080` in Docker): set
+    `WEBHOOK_ALLOW_PRIVATE=true`. Receivers that answer with a redirect must be called at their
+    final URL.
+14. **Idempotency:** a second request with the same `Idempotency-Key` while the first is still
+    running now gets `409 idempotency-in-progress` — retry after a moment.
 
 ## 0.4.x → 0.5.0
 

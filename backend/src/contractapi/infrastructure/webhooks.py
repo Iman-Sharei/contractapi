@@ -78,6 +78,11 @@ def _send_with_retries(
             return
         except Exception as exc:  # noqa: BLE001
             last_err = str(exc)
+            from contractapi.infrastructure.net_guard import BlockedDestination
+
+            if isinstance(exc, BlockedDestination):
+                logger.error("webhook blocked url=%s reason=%s", hook.url, exc)
+                break  # policy refusal: retrying cannot help
             logger.warning(
                 "webhook attempt failed url=%s attempt=%s err=%s",
                 hook.url,
@@ -106,8 +111,11 @@ def _send_once(hook: WebhookConfig, body: bytes) -> None:
 
         sig = hmac.new(resolve_refs(hook.secret).encode(), body, hashlib.sha256).hexdigest()
         headers["X-Contractapi-Signature"] = f"sha256={sig}"
+    from contractapi.infrastructure.net_guard import assert_public_url, safe_opener
+
+    assert_public_url(hook.url)  # SSRF: never call internal/cloud-metadata addresses
     req = urlrequest.Request(hook.url, data=body, headers=headers, method="POST")
-    with urlrequest.urlopen(req, timeout=hook.timeout_seconds) as resp:  # noqa: S310
+    with safe_opener().open(req, timeout=hook.timeout_seconds) as resp:
         if resp.status >= 400:
             raise RuntimeError(f"HTTP {resp.status}")
         logger.info("webhook ok url=%s status=%s", hook.url, resp.status)

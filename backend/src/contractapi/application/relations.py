@@ -72,9 +72,18 @@ def _load_one_relation(
     else:
         table_sql = _q(rel.table)
     placeholders = ", ".join(f":k{i}" for i in range(len(parent_keys)))
-    params = {f"k{i}": v for i, v in enumerate(parent_keys)}
+    params: dict[str, Any] = {f"k{i}": v for i, v in enumerate(parent_keys)}
+    params["_max"] = rel.max_per_parent
+    where = f"{_q(rel.foreign_key)} IN ({placeholders})"
+    if rel.soft_delete_column:
+        where += f" AND {_q(rel.soft_delete_column)} IS NULL"
+    order = _q(rel.primary_key) if rel.primary_key in rel.fields else _q(rel.foreign_key)
+    # Cap rows per parent in the database (not after fetching every child row).
     sql = text(
-        f"SELECT {cols} FROM {table_sql} WHERE {_q(rel.foreign_key)} IN ({placeholders})"
+        f"SELECT {cols} FROM ("
+        f"SELECT {cols}, ROW_NUMBER() OVER (PARTITION BY {_q(rel.foreign_key)} ORDER BY {order}) "
+        f"AS _ca_rn FROM {table_sql} WHERE {where}"
+        f") AS _ca_rel WHERE _ca_rn <= :_max"
     )
     mappings = [dict(r) for r in conn.execute(sql, params).mappings().all()]
 
@@ -82,9 +91,7 @@ def _load_one_relation(
     for mapping in mappings:
         key = mapping.get(rel.foreign_key)
         item = {f: _ser(mapping.get(f)) for f in rel.fields}
-        bucket = grouped[key]
-        if len(bucket) < rel.max_per_parent:
-            bucket.append(item)
+        grouped[key].append(item)
 
     if rel.type == RelationType.ONE_TO_MANY:
         for p in parents:

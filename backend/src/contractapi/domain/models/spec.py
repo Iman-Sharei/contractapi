@@ -335,6 +335,8 @@ class RelationSpec(BaseModel):
     primary_key: str = "id"
     max_per_parent: int = Field(default=50, ge=1, le=500)
     allow_sensitive: bool = False
+    # Optional: hide child rows where this column is set (e.g. deleted_at).
+    soft_delete_column: str | None = Field(default=None, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
 
     model_config = {"populate_by_name": True}
 
@@ -410,7 +412,7 @@ class SqlParam(BaseModel):
 
 
 class WebhookConfig(BaseModel):
-    url: str
+    url: str = Field(pattern=r"^https?://[^\s/]+", description="http(s) URL of the receiver")
     events: list[str] = Field(
         default_factory=lambda: ["create", "update", "delete", "bulk_create"],
     )

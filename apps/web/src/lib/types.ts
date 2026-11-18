@@ -27,6 +27,8 @@ export type RelationDraft = {
   fields: string[];
   primary_key: string;
   max_per_parent: number;
+  /** Hide child rows where this column is set (e.g. deleted_at). */
+  soft_delete_column?: string | null;
 };
 
 export type FieldValidation = {

@@ -2178,6 +2178,21 @@ export function StudioShell({
                                 />
                               </label>
                             </div>
+                            <label>
+                              Hide deleted rows (optional column)
+                              <input
+                                value={r.soft_delete_column ?? ""}
+                                placeholder="deleted_at"
+                                onChange={(e) =>
+                                  updateRelation(r.name, {
+                                    soft_delete_column: e.target.value.trim() || null,
+                                  })
+                                }
+                              />
+                              <span className={styles.hint}>
+                                Nested rows where this column has a value are left out.
+                              </span>
+                            </label>
                             <div className={styles.twoCol}>
                               <label>
                                 Primary key

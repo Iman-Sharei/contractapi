@@ -49,6 +49,13 @@ class IdempotencyStore:
             self.ttl_seconds,
         )
 
+    def claim(self, key: str, ttl_seconds: int = 60) -> bool:
+        """Atomically reserve a key so concurrent duplicates cannot both run the write."""
+        return get_kv().set_if_absent(f"idem-lock:{key}", "1", ttl_seconds)
+
+    def release(self, key: str) -> None:
+        get_kv().delete(f"idem-lock:{key}")
+
     def clear(self) -> None:
         get_kv().delete_prefix("idem:")
 

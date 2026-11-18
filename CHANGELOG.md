@@ -4,6 +4,24 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Hardening (Medium)
+- OIDC browser login uses PKCE (S256) and a nonce; tokens must be issued for this Studio
+  (`STUDIO_OIDC_AUDIENCE`, or `aud`/`azp` = `STUDIO_OIDC_CLIENT_ID`); the server refuses to start
+  with an issuer but neither; `return_to` can no longer redirect off-site
+- Webhooks refuse private/loopback/link-local/metadata targets (opt in: `WEBHOOK_ALLOW_PRIVATE=true`),
+  do not follow redirects, and blocked deliveries go straight to the DLQ
+- Postgres SQL endpoints run in a `READ ONLY` transaction (side-effecting functions cannot write)
+- Relations cap rows per parent in SQL (`ROW_NUMBER`) and can hide deleted children
+  (`soft_delete_column`, also in the Studio relation editor)
+- Body-size limit counts received bytes (chunked requests included)
+- Idempotency keys are claimed atomically: a concurrent duplicate gets 409 instead of a second write;
+  a failed request releases the key so it can be retried
+- In-memory store is capped (`MEMORY_KV_MAX_ENTRIES`, default 10000); in-process job registry bounded
+- `/jobs/{id}` only answers the caller that created the job (others get 404)
+- Studio DB errors stay actionable but never include credentials; data-plane relation errors no
+  longer echo driver messages; OpenAPI export errors are Problem Details
+- GraphQL resolvers run in a worker thread (no event-loop blocking)
+
 ### Correctness & API standards
 - Filters convert values to the column type: numeric, date, datetime, bool and uuid columns
   now filter correctly (were HTTP 500). A bad value is a 400 that says what format is expected;

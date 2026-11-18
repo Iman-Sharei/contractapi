@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, parse_spec
 from contractapi.domain.sensitive import find_sensitive_columns
+from contractapi.infrastructure.db.errors import safe_db_message
 from contractapi.infrastructure.db.introspect import introspect_schema, missing_columns
 
 
@@ -113,7 +114,7 @@ def introspect(database_url: str, schema: str = "public") -> list[dict[str, Any]
             type_="https://contractapi.dev/problems/database-unreachable",
             title="Database unreachable",
             status=400,
-            detail=str(exc),
+            detail=f"Could not connect to the database: {safe_db_message(exc)}",
         ) from exc
     return [t.to_dict() for t in tables]
 
@@ -147,7 +148,8 @@ def validate_spec_payload(raw: dict[str, Any], *, check_db: bool = True) -> dict
                         missing = missing_columns(url, ep.table, ep.schema_name, ep.fields)
                     except Exception as exc:  # noqa: BLE001
                         errors.append(
-                            f"Endpoint '{ep.name}': could not introspect table '{ep.table}': {exc}"
+                            f"Endpoint '{ep.name}': could not introspect table '{ep.table}': "
+                            f"{safe_db_message(exc)}"
                         )
                         continue
                     if missing:
@@ -162,7 +164,7 @@ def validate_spec_payload(raw: dict[str, Any], *, check_db: bool = True) -> dict
         except AppError:
             raise
         except Exception as exc:  # noqa: BLE001
-            warnings.append(f"Database check skipped: {exc}")
+            warnings.append(f"Database check skipped: {safe_db_message(exc)}")
 
     from contractapi.infrastructure.secrets import has_literal_password, mask_spec_dict
 

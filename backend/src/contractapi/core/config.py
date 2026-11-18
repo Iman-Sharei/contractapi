@@ -23,6 +23,15 @@ class Settings(BaseSettings):
         description="Required on studio routes via X-API-Key (OWASP: protect management plane).",
     )
     cors_origins: str = "http://localhost:3000"
+    memory_kv_max_entries: int = Field(
+        default=10_000,
+        ge=100,
+        description="Cap for the in-memory cache/idempotency store (oldest entries evicted).",
+    )
+    webhook_allow_private: bool = Field(
+        default=False,
+        description="Allow webhooks to private/loopback/link-local addresses (SSRF risk).",
+    )
     trusted_proxies: str = Field(
         default="",
         description=(
