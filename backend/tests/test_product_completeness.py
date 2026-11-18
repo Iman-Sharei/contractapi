@@ -312,6 +312,7 @@ def test_boot_restore_moves_literal_passwords_out_of_runtime_state(tmp_path, mon
     from contractapi.interfaces.http.app_factory import _restore_runtime
 
     monkeypatch.setenv("BOOT_SPEC", "")
+    monkeypatch.setenv("RESTORE_ACTIVE_ON_BOOT", "true")  # CI disables restore globally
     get_settings.cache_clear()
     raw = {
         "database": {"url": "postgresql://app:old-pass@db:5432/app"},
