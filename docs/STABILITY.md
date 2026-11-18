@@ -1,8 +1,8 @@
 # Stability & SemVer (Beta)
 
-**Status:** `0.5.0` — **Beta**. Suitable for early production on a **single self-hosted node** with known limits.
+**Status:** `0.6.0` — **Beta**. Suitable for early production on a **single self-hosted node** with known limits.
 
-## What is stable in 0.5.x
+## What is stable in 0.6.x
 
 | Surface | Stability |
 |---------|-----------|
@@ -25,9 +25,10 @@
 
 ## Versioning rules
 
-1. **0.5.x Beta** — bugfixes + additive features; rare breaking YAML changes only with `UPGRADING.md` note.
+1. **0.6.x Beta** — bugfixes + additive features; rare breaking YAML changes only with `UPGRADING.md` note.
 2. **1.0.0** — after ≥1 real external deploy cycle.
-3. Pre-releases use PEP 440: `0.5.0b1`, `0.5.0rc1`.
+3. Pre-releases use PEP 440: `0.7.0b1`, `0.7.0rc1`.
+4. YAML default `app.api_prefix` is `/v1`; the Studio wizard writes `""` explicitly.
 
 ## Deprecation policy
 

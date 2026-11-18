@@ -1,6 +1,6 @@
 # Remaining gaps (post-Beta)
 
-**Maturity:** Beta `0.5.0` — see [STABILITY.md](STABILITY.md).
+**Maturity:** Beta `0.6.0` — see [STABILITY.md](STABILITY.md).
 
 ## Experimental
 
@@ -26,7 +26,6 @@ No features currently require `CONTRACTAPI_EXPERIMENTAL`. The env var remains fo
 - Deeper warehouse dialect quirks (Snowflake VARIANT, BQ STRUCT nesting)
 - GraphQL subscription push (CDC) beyond poll MVP
 - dbt exposures / tests → OpenAPI metadata
-- PKCE for public OIDC clients
 
 ## Not in scope
 

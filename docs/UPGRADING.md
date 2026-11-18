@@ -1,6 +1,6 @@
 # Upgrading
 
-## 0.5.0 → next (security fixes)
+## 0.5.x → 0.6.0
 
 1. **Studio sign-in:** open `/login` and paste the server's `STUDIO_API_KEY` (or use SSO).
    For local `npm run dev`, set `STUDIO_DEV_AUTOLOGIN=true` in `apps/web/.env.local`.
@@ -32,6 +32,9 @@
     final URL.
 14. **Idempotency:** a second request with the same `Idempotency-Key` while the first is still
     running now gets `409 idempotency-in-progress` — retry after a moment.
+15. **`api_prefix` default:** a YAML spec without `app.api_prefix` still serves under `/v1`; the
+    Studio wizard writes an empty prefix explicitly (URLs like `/customers`). Nothing changes for
+    existing specs.
 
 ## 0.4.x → 0.5.0
 

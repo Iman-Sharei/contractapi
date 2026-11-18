@@ -2,7 +2,21 @@
 
 All notable changes to this project are documented here.
 
-## Unreleased
+## 0.6.0 — 2026-11-18 (Beta)
+
+Security-hardening and usability release. **Breaking changes** — read
+[docs/UPGRADING.md](docs/UPGRADING.md) before upgrading.
+
+### Studio UX
+- "Use your API" panel after activation: live URL, one-click API key, runnable curl / Python / pandas
+- Plain-language safety checklist in the wizard, the Security tab and the API page
+- Inline URL-path errors; wizard generates valid paths; relation editor can hide deleted rows
+
+### Internal
+- Studio editor split into a state hook and tab components; data-plane builder split into the
+  `application/data_api/` package; Aggregate DSL in `domain/models/aggregate.py`
+- CI lints backend (ruff) and web (eslint), tests GA extras, runs wizard + editor e2e
+- Single version source (`contractapi.__version__`); `X-Trace-Id` validated; API names validated on activate
 
 ### Hardening (Medium)
 - OIDC browser login uses PKCE (S256) and a nonce; tokens must be issued for this Studio

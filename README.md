@@ -6,7 +6,7 @@
 
 **Spec-first Postgres → FastAPI**, with a Next.js Studio.
 
-**Maturity: Beta (`0.5.0`)** — see [docs/STABILITY.md](docs/STABILITY.md).  
+**Maturity: Beta (`0.6.0`)** — see [docs/STABILITY.md](docs/STABILITY.md).  
 PyPI: `pip install contractapi` (import name `contractapi`).
 
 You design the API contract. The database is only the source — never the public surface.
@@ -31,7 +31,7 @@ Security baselines: **OWASP API Top 10**, **RFC 9457**, **Zalando API guidelines
 ```bash
 # One-command local stack (API + Studio + Postgres + Redis)
 docker compose up -d --build
-# Studio http://localhost:3000  · API http://localhost:8000/docs
+# Studio http://localhost:3000 (sign in with STUDIO_API_KEY)  · API http://localhost:8000/docs
 ```
 
 Or pip + Studio separately:
@@ -43,7 +43,7 @@ export STUDIO_API_KEY=dev-studio-key-change-me DATA_API_KEYS=dev-data-key
 export JWT_SECRET=dev-jwt-secret-change-me-please-32chars CORS_ORIGINS=http://localhost:3000
 contractapi serve --host 127.0.0.1 --port 8000
 # other terminal:
-cd apps/web && cp .env.example .env.local && npm install && npm run dev
+cd apps/web && cp .env.example .env.local && npm install && npm run dev   # STUDIO_DEV_AUTOLOGIN=true skips login locally
 ```
 
 Production notes: [docs/PRODUCTION.md](docs/PRODUCTION.md) · Security: [docs/SECURITY.md](docs/SECURITY.md).
