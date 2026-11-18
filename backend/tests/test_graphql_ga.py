@@ -267,7 +267,7 @@ def test_graphql_relations_and_rbac():
                 "version": "0.5.0",
                 "description": "t",
                 "read_only": True,
-                "auth": "none",
+                "auth": "jwt",
                 "api_prefix": "",
                 "rbac": [
                     {
@@ -313,15 +313,22 @@ def test_graphql_relations_and_rbac():
     app = FastAPI()
     mount_graphql(app, engine, spec)
     client = TestClient(app)
+    from contractapi.domain.models.spec import JwtConfig
+    from contractapi.infrastructure.security.jwt_tokens import issue_token
+
+    def bearer(role: str) -> dict[str, str]:
+        tok = issue_token(subject="t", roles=[role], jwt_cfg=JwtConfig())
+        return {"Authorization": f"Bearer {tok}"}
 
     full = client.post(
         "/graphql",
         json={
             "query": (
                 '{ endpoint(name: "customers", limit: 5, includeRelations: true, '
-                "roles: [\"analyst\"]) }"
+                ") }"
             )
         },
+        headers=bearer("analyst"),
     )
     assert full.status_code == 200, full.text
     fbody = full.json()
@@ -336,9 +343,10 @@ def test_graphql_relations_and_rbac():
         json={
             "query": (
                 '{ endpoint(name: "customers", limit: 5, includeRelations: true, '
-                "roles: [\"limited\"]) }"
+                ") }"
             )
         },
+        headers=bearer("limited"),
     )
     assert limited.status_code == 200, limited.text
     lbody = limited.json()

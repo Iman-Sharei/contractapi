@@ -174,7 +174,7 @@ def test_graphql_row_level_claims():
                 "version": "0.5.0",
                 "description": "t",
                 "read_only": True,
-                "auth": "none",
+                "auth": "jwt",
                 "api_prefix": "",
             },
             "endpoints": [
@@ -193,25 +193,27 @@ def test_graphql_row_level_claims():
     )
     from fastapi import FastAPI
 
+    from contractapi.core.errors import AppError, app_error_handler
+    from contractapi.domain.models.spec import JwtConfig
+    from contractapi.infrastructure.security.jwt_tokens import issue_token
+
     app = FastAPI()
+    app.add_exception_handler(AppError, app_error_handler)
     mount_graphql(app, engine, spec)
     client = TestClient(app)
 
+    # No token → rejected (claims can no longer be supplied as a GraphQL argument).
     missing = client.post(
         "/graphql",
         json={"query": '{ endpoint(name: "docs", limit: 10) }'},
     )
-    assert missing.status_code == 200
-    assert missing.json().get("errors")
+    assert missing.status_code == 401
 
+    token = issue_token(subject="alice", roles=["x"], jwt_cfg=JwtConfig())
     ok = client.post(
         "/graphql",
-        json={
-            "query": (
-                "query ($c: JSON) { endpoint(name: \"docs\", limit: 10, claims: $c) }"
-            ),
-            "variables": {"c": {"sub": "alice"}},
-        },
+        json={"query": '{ endpoint(name: "docs", limit: 10) }'},
+        headers={"Authorization": f"Bearer {token}"},
     )
     assert ok.status_code == 200, ok.text
     body = ok.json()

@@ -55,7 +55,6 @@ from contractapi.infrastructure.observability import Timer, metrics
 from contractapi.infrastructure.security.auth import authenticate_request, enforce_endpoint_roles
 from contractapi.infrastructure.security.jwt_tokens import (
     extract_bearer,
-    issue_token_pair,
     refresh_tokens,
     revoke_token,
 )
@@ -186,7 +185,6 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
         "/openapi.json",
         "/docs",
         "/redoc",
-        "/auth/token",
         "/auth/refresh",
         "/auth/revoke",
     }
@@ -303,15 +301,8 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
         return PlainTextResponse(metrics.render_prometheus(), media_type="text/plain; version=0.0.4")
 
     if spec.app.auth == AuthMode.JWT:
-
-        @app.post("/auth/token", tags=["auth"], include_in_schema=True)
-        def issue_dev_token(body: dict[str, Any]) -> dict[str, Any]:
-            return issue_token_pair(
-                subject=str(body.get("sub", "user")),
-                roles=list(body.get("roles") or ["analyst"]),
-                jwt_cfg=spec.app.jwt,
-                extra={k: v for k, v in body.items() if k not in {"sub", "roles", "expires_minutes"}},
-            )
+        # No public token minting here: tokens come from your IdP, or from the
+        # admin-only Studio endpoint POST /studio/token for testing.
 
         @app.post("/auth/refresh", tags=["auth"])
         def refresh(body: dict[str, Any]) -> dict[str, Any]:
@@ -482,12 +473,25 @@ def _mount_endpoint(
         _add_delete(router, engine, table, endpoint, spec, tags)
 
 
-def _cache_prefix(endpoint: EndpointSpec) -> str:
-    return f"ep:{endpoint.name}:"
+def _cache_prefix(spec: ApiSpec, endpoint: EndpointSpec) -> str:
+    # Namespaced per contract so two active APIs never share entries.
+    return f"ep:{spec.namespace}:{endpoint.name}:"
 
 
-def _invalidate_endpoint_cache(endpoint: EndpointSpec) -> None:
-    response_cache.invalidate_prefix(_cache_prefix(endpoint))
+def _row_scope(endpoint: EndpointSpec, request: Request) -> str:
+    """Cache/idempotency scope for row-level endpoints: the caller's claim value."""
+    cfg = endpoint.row_level
+    if not cfg:
+        return ""
+    principal = getattr(request.state, "principal", {}) or {}
+    value = (principal.get("claims") or {}).get(cfg.claim)
+    if value is None:
+        value = principal.get(cfg.claim)
+    return f"rl={json.dumps(value, default=str)}:"
+
+
+def _invalidate_endpoint_cache(spec: ApiSpec, endpoint: EndpointSpec) -> None:
+    response_cache.invalidate_prefix(_cache_prefix(spec, endpoint))
 
 
 def _build_write_models(endpoint: EndpointSpec, table: Table) -> tuple[type[BaseModel], type[BaseModel], type[BaseModel]]:
@@ -709,7 +713,8 @@ def _add_list(
             limit, offset, cursor = max_limit, 0, None
 
         cache_key = (
-            f"{_cache_prefix(endpoint)}list:{request.url.query}:fields={','.join(fields)}"
+            f"{_cache_prefix(spec, endpoint)}{_row_scope(endpoint, request)}"
+            f"list:{request.url.query}:fields={','.join(fields)}"
         )
         if spec.app.cache.enabled:
             cached = response_cache.get(cache_key)
@@ -904,7 +909,10 @@ def _add_detail(
 
     async def get_item(request: Request, item_id: Any) -> Any:
         fields = _visible_fields(spec, endpoint, request)
-        cache_key = f"{_cache_prefix(endpoint)}detail:{item_id}:fields={','.join(fields)}"
+        cache_key = (
+            f"{_cache_prefix(spec, endpoint)}{_row_scope(endpoint, request)}"
+            f"detail:{item_id}:fields={','.join(fields)}"
+        )
         cached = None
         if spec.app.cache.enabled:
             cached = response_cache.get(cache_key)
@@ -992,7 +1000,10 @@ def _idempotency_begin(
             status=400,
             detail="Idempotency-Key must be <= 256 characters.",
         )
-    return make_scope_key(f"{endpoint.name}:{method}:{path}", idem_key)
+    principal = getattr(request.state, "principal", {}) or {}
+    # Scope per API + caller so a reused key never replays someone else's response.
+    scope = f"{spec.namespace}:{principal.get('sub') or 'anon'}:{endpoint.name}:{method}:{path}"
+    return make_scope_key(scope, idem_key)
 
 
 def _idempotency_replay_or_conflict(
@@ -1132,7 +1143,7 @@ def _add_create(router, engine, table, endpoint, spec, item_model, write_model, 
 
             def work() -> dict[str, Any]:
                 result = _do_insert(engine, table, endpoint, payload)
-                _invalidate_endpoint_cache(endpoint)
+                _invalidate_endpoint_cache(spec, endpoint)
                 return result
 
             enqueue_job(job.id, work)
@@ -1144,7 +1155,7 @@ def _add_create(router, engine, table, endpoint, spec, item_model, write_model, 
             )
 
         result = _do_insert(engine, table, endpoint, payload)
-        _invalidate_endpoint_cache(endpoint)
+        _invalidate_endpoint_cache(spec, endpoint)
         _idempotency_commit(
             store_key,
             method="POST",
@@ -1210,7 +1221,7 @@ def _add_bulk(router, engine, table, endpoint, spec, write_model, tags) -> None:
                 errors.append({"index": idx, "status": 500, "detail": str(exc)})
 
         if created:
-            _invalidate_endpoint_cache(endpoint)
+            _invalidate_endpoint_cache(spec, endpoint)
         _audit(
             spec,
             "bulk_create",
@@ -1301,7 +1312,7 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
                 detail=f"{endpoint.name} with {pk}={item_id} not found",
             )
         result = _row_to_dict(row, endpoint.fields)
-        _invalidate_endpoint_cache(endpoint)
+        _invalidate_endpoint_cache(spec, endpoint)
         _idempotency_commit(
             store_key,
             method="PATCH",
@@ -1383,7 +1394,7 @@ def _add_delete(router, engine, table, endpoint, spec, tags) -> None:  # type: i
                 status=404,
                 detail=f"{endpoint.name} with {pk}={item_id} not found",
             )
-        _invalidate_endpoint_cache(endpoint)
+        _invalidate_endpoint_cache(spec, endpoint)
         _idempotency_commit(
             store_key,
             method="DELETE",

@@ -34,7 +34,11 @@ We aim to acknowledge within **72 hours** and ship a fix or mitigation advisory 
 
 ## Hardening checklist
 
-1. Change all default keys (`STUDIO_API_KEY`, `DATA_API_KEYS`, `JWT_SECRET`).
+1. Change all default keys (`STUDIO_API_KEY`, `DATA_API_KEYS`, `JWT_SECRET`). With
+   `ENVIRONMENT=production` the server refuses to start on default/short secrets.
+   `auth: api_key` with no configured keys rejects every request (fail closed).
+   Data-plane JWTs come from your IdP; there is no public token endpoint (test tokens:
+   admin-only `POST /studio/token`). GraphQL authorization uses only the verified token.
 2. Prefer Studio behind VPN / SSO (OIDC) + keep API key as break-glass only.
 3. Use Next BFF (`STUDIO_API_KEY` server-only) — never `NEXT_PUBLIC_*` secrets in prod.
 4. Set `app.read_only: true` unless writes are required; enable `row_level` + RBAC for JWT.

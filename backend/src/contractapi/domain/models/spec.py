@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 from contractapi.domain.sensitive import WRITE_METHODS, assert_fields_safe
 
@@ -711,6 +711,17 @@ class ApiSpec(BaseModel):
     database: DatabaseConfig
     app: AppConfig = Field(default_factory=AppConfig)
     endpoints: list[EndpointSpec] = Field(default_factory=list)
+    _namespace: str | None = PrivateAttr(default=None)
+
+    @property
+    def namespace(self) -> str:
+        """Stable short hash of this contract — isolates cache/idempotency keys per API."""
+        if self._namespace is None:
+            import hashlib
+
+            raw = self.model_dump_json(by_alias=True).encode("utf-8")
+            self._namespace = hashlib.sha256(raw).hexdigest()[:16]
+        return self._namespace
 
     @model_validator(mode="after")
     def enforce_invariants(self) -> ApiSpec:

@@ -19,6 +19,13 @@ from contractapi.infrastructure.security.token_store import (
     store_refresh,
 )
 
+RESERVED_CLAIMS = frozenset({"sub", "roles", "iss", "aud", "iat", "exp", "nbf", "jti", "typ"})
+
+
+def _custom_claims(extra: dict[str, Any] | None) -> dict[str, Any]:
+    """Extra claims may add data (e.g. tenant) but never override identity/validity claims."""
+    return {k: v for k, v in (extra or {}).items() if k not in RESERVED_CLAIMS}
+
 
 def issue_token_pair(
     *,
@@ -29,6 +36,7 @@ def issue_token_pair(
 ) -> dict[str, Any]:
     settings = get_settings()
     _require_secret(settings.jwt_secret)
+    extra = _custom_claims(extra)
     now = datetime.now(timezone.utc)
     access_jti = new_jti()
     refresh_jti = new_jti()

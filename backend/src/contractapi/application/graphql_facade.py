@@ -5,11 +5,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from sqlalchemy import Column, MetaData, String, Table, select, text
+from sqlalchemy import Column, MetaData, String, Table, and_, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from contractapi.application.validation_rules import validate_payload
+from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, EndpointSpec, HttpMethod
+from contractapi.infrastructure.security.auth import enforce_endpoint_roles
 
 _IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
@@ -29,31 +32,31 @@ try:
         params: JSON | None,
         include_relations: bool,
         roles: list[str] | None,
-        claims: JSON | None,
     ) -> list[dict[str, Any]]:
         endpoints: dict[str, EndpointSpec] = info.context["endpoints"]
         engine: Engine = info.context["engine"]
         spec: ApiSpec = info.context["spec"]
+        principal: dict[str, Any] = info.context["principal"]
         ep = endpoints.get(name)
         if ep is None:
             raise ValueError(
                 f"Unknown or non-GraphQL endpoint '{name}'. "
                 f"Allowed: {sorted(endpoints)}"
             )
+        enforce_endpoint_roles(principal, ep.roles)
         bind = params if isinstance(params, dict) else {}
-        claim_map = claims if isinstance(claims, dict) else {}
         rows = _fetch_rows(
             engine,
             ep,
             limit,
             bind_params=bind,
-            claims=claim_map,
+            principal=principal,
         )
         if include_relations and (not ep.is_sql) and ep.relations:
             from contractapi.application.relations import load_relations
 
             load_relations(engine, MetaData(), ep.relations, rows)
-        return _apply_rbac(spec, ep, rows, roles or [])
+        return _apply_rbac(spec, ep, rows, _effective_roles(principal, roles))
 
     @strawberry.type
     class Query:
@@ -66,10 +69,10 @@ try:
             params: JSON | None = None,
             include_relations: bool = True,
             roles: list[str] | None = None,
-            claims: JSON | None = None,
         ) -> list[JSON]:
+            """`roles` can only narrow to a subset of the caller's token roles."""
             return _resolve_endpoint_rows(
-                info, name, limit, params, include_relations, roles, claims
+                info, name, limit, params, include_relations, roles or None
             )
 
         @strawberry.field
@@ -110,13 +113,12 @@ try:
             interval_seconds: float = 2.0,
             include_relations: bool = False,
             roles: list[str] | None = None,
-            claims: JSON | None = None,
         ) -> AsyncGenerator[list[JSON], None]:
             """Poll-based subscription MVP (WebSocket)."""
             delay = max(0.5, min(float(interval_seconds), 30.0))
             while True:
                 yield _resolve_endpoint_rows(
-                    info, name, limit, None, include_relations, roles, claims
+                    info, name, limit, None, include_relations, roles or None
                 )
                 await asyncio.sleep(delay)
 
@@ -183,8 +185,31 @@ def _fetch_sql_rows(
     return [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows]
 
 
+def _claim_value(principal: dict[str, Any], claim: str) -> Any:
+    """Same lookup as REST row-level: verified token claims first, then principal fields."""
+    value = (principal.get("claims") or {}).get(claim)
+    return principal.get(claim) if value is None else value
+
+
+def _effective_roles(principal: dict[str, Any], requested: list[str] | None) -> list[str]:
+    """Token roles, optionally narrowed by the client — never widened."""
+    own = [str(r) for r in (principal.get("roles") or [])]
+    if not requested:
+        return own
+    return [r for r in own if r in set(requested)]
+
+
+def _row_level_missing(ep: EndpointSpec) -> AppError:
+    return AppError(
+        type_="https://contractapi.dev/problems/forbidden",
+        title="Forbidden",
+        status=403,
+        detail=f"Missing claim '{ep.row_level.claim}' for row-level access on '{ep.name}'.",
+    )
+
+
 def _security_sql(
-    ep: EndpointSpec, claims: dict[str, Any]
+    ep: EndpointSpec, principal: dict[str, Any]
 ) -> tuple[list[str], dict[str, Any]]:
     """Soft-delete + row-level clauses for GraphQL table reads (REST parity)."""
     clauses: list[str] = []
@@ -192,11 +217,9 @@ def _security_sql(
     if ep.soft_delete and ep.soft_delete.column:
         clauses.append(f"{_quote_ident(ep.soft_delete.column)} IS NULL")
     if ep.row_level and ep.row_level.column:
-        value = claims.get(ep.row_level.claim)
+        value = _claim_value(principal, ep.row_level.claim)
         if value is None and ep.row_level.required:
-            raise ValueError(
-                f"Missing claim '{ep.row_level.claim}' for row-level access on '{ep.name}'."
-            )
+            raise _row_level_missing(ep)
         if value is not None:
             clauses.append(f"{_quote_ident(ep.row_level.column)} = :_rl_claim")
             params["_rl_claim"] = value
@@ -209,13 +232,12 @@ def _fetch_rows(
     limit: int,
     *,
     bind_params: dict[str, Any] | None = None,
-    claims: dict[str, Any] | None = None,
+    principal: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     limit = max(1, min(limit, ep.pagination.max_limit))
     if ep.is_sql:
         return _fetch_sql_rows(engine, ep, limit, bind_params=bind_params)
-    claim_map = claims or {}
-    sec_clauses, sec_params = _security_sql(ep, claim_map)
+    sec_clauses, sec_params = _security_sql(ep, principal or {})
     fields_sql = ", ".join(_quote_ident(f) for f in ep.fields)
     schema = ep.schema_name
     if schema and schema not in {"main", ""}:
@@ -260,106 +282,182 @@ def _filter_write_payload(ep: EndpointSpec, data: dict[str, Any]) -> dict[str, A
     return out
 
 
-def _write_endpoints(info: Any) -> dict[str, EndpointSpec]:
-    return info.context["write_endpoints"]
+def _write_target(
+    info: Any, name: str, methods: set[HttpMethod], verb: str
+) -> tuple[EndpointSpec, Engine, ApiSpec, dict[str, Any]]:
+    ep = info.context["write_endpoints"].get(name)
+    if ep is None or not (methods & set(ep.methods)):
+        raise ValueError(f"{verb} not allowed for endpoint '{name}'.")
+    if ep.is_sql:
+        raise ValueError("SQL endpoints are read-only over GraphQL.")
+    principal: dict[str, Any] = info.context["principal"]
+    enforce_endpoint_roles(principal, ep.roles)
+    return ep, info.context["engine"], info.context["spec"], principal
+
+
+def _force_row_level(
+    ep: EndpointSpec, principal: dict[str, Any], payload: dict[str, Any], *, always: bool
+) -> dict[str, Any]:
+    """Owner column always equals the caller's claim (REST `_inject_row_level` parity)."""
+    cfg = ep.row_level
+    if not cfg or (not always and cfg.column not in payload):
+        return payload
+    value = _claim_value(principal, cfg.claim)
+    if value is None:
+        if cfg.required:
+            raise _row_level_missing(ep)
+        return payload
+    if cfg.column in payload and payload[cfg.column] != value:
+        raise AppError(
+            type_="https://contractapi.dev/problems/forbidden",
+            title="Forbidden",
+            status=403,
+            detail=f"Cannot set '{cfg.column}' to a value other than your claim.",
+        )
+    return {**payload, cfg.column: value}
+
+
+def _row_filters(ep: EndpointSpec, table: Table, principal: dict[str, Any]) -> list[Any]:
+    """WHERE clauses that scope update/delete to rows the caller may see."""
+    out: list[Any] = []
+    if ep.soft_delete and ep.soft_delete.column in table.c:
+        out.append(table.c[ep.soft_delete.column].is_(None))
+    if ep.row_level:
+        value = _claim_value(principal, ep.row_level.claim)
+        if value is None:
+            if ep.row_level.required:
+                raise _row_level_missing(ep)
+        else:
+            out.append(table.c[ep.row_level.column] == value)
+    return out
+
+
+def _after_write(
+    spec: ApiSpec,
+    ep: EndpointSpec,
+    principal: dict[str, Any],
+    event: str,
+    payload: dict[str, Any],
+    resource_id: Any,
+) -> None:
+    """Same side effects as REST writes: cache invalidation, audit, webhooks."""
+    from contractapi.application.data_api_builder import _invalidate_endpoint_cache
+    from contractapi.infrastructure.audit import audit_event
+    from contractapi.infrastructure.webhooks import dispatch_webhooks
+
+    _invalidate_endpoint_cache(spec, ep)
+    if spec.app.audit_enabled:
+        audit_event(
+            action=f"graphql.{event}",
+            endpoint=ep.name,
+            resource_id=resource_id,
+            principal=principal,
+            status=200,
+        )
+    dispatch_webhooks(spec, event=event, endpoint=ep.name, payload=payload)
+
+
+def _visible(spec: ApiSpec, ep: EndpointSpec, principal: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
+    return _apply_rbac(spec, ep, [row], _effective_roles(principal, None))[0]
 
 
 def _mutate_create(info: Any, name: str, data: dict[str, Any]) -> dict[str, Any]:
-    ep = _write_endpoints(info).get(name)
-    if ep is None or HttpMethod.POST not in ep.methods:
-        raise ValueError(f"Create not allowed for endpoint '{name}'.")
-    if ep.is_sql:
-        raise ValueError("SQL endpoints are read-only over GraphQL.")
-    engine: Engine = info.context["engine"]
-    payload = _filter_write_payload(ep, data)
+    ep, engine, spec, principal = _write_target(info, name, {HttpMethod.POST}, "Create")
+    payload = _force_row_level(ep, principal, _filter_write_payload(ep, data), always=True)
+    validate_payload(ep, payload)
     table = _load_table(engine, ep)
     stmt = table.insert().values(**payload)
     returning = [table.c[f] for f in ep.fields if f in table.c]
+    result: dict[str, Any] | None = None
     try:
         with engine.begin() as conn:
             if returning:
                 row = conn.execute(stmt.returning(*returning)).mappings().first()
                 if row is not None:
-                    return {k: _jsonable(v) for k, v in dict(row).items()}
-            conn.execute(stmt)
-            # Fallback fetch by PK when RETURNING unsupported
-            pk = ep.primary_key
-            if pk in payload:
-                cols = [table.c[f] for f in ep.fields if f in table.c]
-                row = (
-                    conn.execute(select(*cols).where(table.c[pk] == payload[pk]))
-                    .mappings()
-                    .first()
-                )
-                if row:
-                    return {k: _jsonable(v) for k, v in dict(row).items()}
-            return {k: _jsonable(v) for k, v in payload.items()}
+                    result = {k: _jsonable(v) for k, v in dict(row).items()}
+            if result is None:
+                conn.execute(stmt)
+                # Fallback fetch by PK when RETURNING unsupported
+                pk = ep.primary_key
+                if pk in payload:
+                    cols = [table.c[f] for f in ep.fields if f in table.c]
+                    row = (
+                        conn.execute(select(*cols).where(table.c[pk] == payload[pk]))
+                        .mappings()
+                        .first()
+                    )
+                    if row:
+                        result = {k: _jsonable(v) for k, v in dict(row).items()}
+                if result is None:
+                    result = {k: _jsonable(v) for k, v in payload.items()}
     except IntegrityError as exc:
         raise ValueError("Insert violated a database constraint.") from exc
     except SQLAlchemyError as exc:
         raise ValueError(f"Database error: {exc.__class__.__name__}") from exc
+    _after_write(spec, ep, principal, "create", result, result.get(ep.primary_key))
+    return _visible(spec, ep, principal, result)
 
 
 def _mutate_update(info: Any, name: str, item_id: Any, data: dict[str, Any]) -> dict[str, Any]:
-    ep = _write_endpoints(info).get(name)
-    if ep is None or not ({HttpMethod.PATCH, HttpMethod.PUT} & set(ep.methods)):
-        raise ValueError(f"Update not allowed for endpoint '{name}'.")
-    if ep.is_sql:
-        raise ValueError("SQL endpoints are read-only over GraphQL.")
-    engine: Engine = info.context["engine"]
-    payload = _filter_write_payload(ep, data)
+    ep, engine, spec, principal = _write_target(
+        info, name, {HttpMethod.PATCH, HttpMethod.PUT}, "Update"
+    )
+    payload = _force_row_level(ep, principal, _filter_write_payload(ep, data), always=False)
     if not payload:
         raise ValueError("Update payload must include at least one writable field.")
+    validate_payload(ep, payload)
     table = _load_table(engine, ep)
     pk = ep.primary_key
     if pk not in table.c:
         raise ValueError(f"Primary key '{pk}' missing on table.")
+    where = and_(table.c[pk] == item_id, *_row_filters(ep, table, principal))
     returning = [table.c[f] for f in ep.fields if f in table.c]
+    result: dict[str, Any] | None = None
     try:
         with engine.begin() as conn:
-            stmt = table.update().where(table.c[pk] == item_id).values(**payload)
+            stmt = table.update().where(where).values(**payload)
             if returning:
                 row = conn.execute(stmt.returning(*returning)).mappings().first()
-                if row is not None:
-                    return {k: _jsonable(v) for k, v in dict(row).items()}
-            result = conn.execute(stmt)
-            if result.rowcount == 0:
-                raise ValueError(f"{name} with {pk}={item_id} not found")
-            cols = [table.c[f] for f in ep.fields if f in table.c]
-            row = conn.execute(select(*cols).where(table.c[pk] == item_id)).mappings().first()
-            if not row:
-                raise ValueError(f"{name} with {pk}={item_id} not found")
-            return {k: _jsonable(v) for k, v in dict(row).items()}
+                if row is None:
+                    raise ValueError(f"{name} with {pk}={item_id} not found")
+                result = {k: _jsonable(v) for k, v in dict(row).items()}
+            else:
+                if conn.execute(stmt).rowcount == 0:
+                    raise ValueError(f"{name} with {pk}={item_id} not found")
+                cols = [table.c[f] for f in ep.fields if f in table.c]
+                row = conn.execute(select(*cols).where(where)).mappings().first()
+                if not row:
+                    raise ValueError(f"{name} with {pk}={item_id} not found")
+                result = {k: _jsonable(v) for k, v in dict(row).items()}
     except IntegrityError as exc:
         raise ValueError("Update violated a database constraint.") from exc
     except SQLAlchemyError as exc:
         raise ValueError(f"Database error: {exc.__class__.__name__}") from exc
+    _after_write(spec, ep, principal, "update", result, item_id)
+    return _visible(spec, ep, principal, result)
 
 
 def _mutate_delete(info: Any, name: str, item_id: Any) -> dict[str, Any]:
-    ep = _write_endpoints(info).get(name)
-    if ep is None or HttpMethod.DELETE not in ep.methods:
-        raise ValueError(f"Delete not allowed for endpoint '{name}'.")
-    if ep.is_sql:
-        raise ValueError("SQL endpoints are read-only over GraphQL.")
-    engine: Engine = info.context["engine"]
+    ep, engine, spec, principal = _write_target(info, name, {HttpMethod.DELETE}, "Delete")
     table = _load_table(engine, ep)
     pk = ep.primary_key
     if pk not in table.c:
         raise ValueError(f"Primary key '{pk}' missing on table.")
+    where = and_(table.c[pk] == item_id, *_row_filters(ep, table, principal))
     with engine.begin() as conn:
         if ep.soft_delete and ep.soft_delete.column in table.c:
             from datetime import datetime, timezone
 
             result = conn.execute(
                 table.update()
-                .where(table.c[pk] == item_id)
+                .where(where)
                 .values({ep.soft_delete.column: datetime.now(timezone.utc)})
             )
         else:
-            result = conn.execute(table.delete().where(table.c[pk] == item_id))
+            result = conn.execute(table.delete().where(where))
         if result.rowcount == 0:
             raise ValueError(f"{name} with {pk}={item_id} not found")
+    _after_write(spec, ep, principal, "delete", {"id": _jsonable(item_id)}, item_id)
     return {"deleted": True, "id": _jsonable(item_id), "endpoint": name}
 
 
@@ -380,9 +478,14 @@ def mount_graphql(app: Any, engine: Engine, spec: ApiSpec) -> None:
     Mount /graphql for contract-scoped reads (table + SQL) and table mutations.
 
     GA when strawberry is installed: pip install 'contractapi[graphql]'.
+    Authorization comes only from the verified principal (never from GraphQL args).
     """
     if not graphql_available() or GraphQLRouter is None or _GRAPHQL_SCHEMA is None:
         return
+
+    from fastapi.requests import HTTPConnection
+
+    from contractapi.infrastructure.security.auth import authenticate_request
 
     endpoints = {
         e.name: e for e in spec.endpoints if HttpMethod.GET in e.methods
@@ -403,15 +506,23 @@ def mount_graphql(app: Any, engine: Engine, spec: ApiSpec) -> None:
 
     mutation_ops = _mutation_ops(write_endpoints)
 
-    def context_getter() -> dict[str, Any]:
+    def context_getter(conn: HTTPConnection) -> dict[str, Any]:
+        # HTTP requests were authenticated by the data-plane middleware;
+        # WebSocket subscriptions bypass it, so authenticate here (fail closed).
+        principal = getattr(conn.state, "principal", None)
+        if principal is None:
+            principal = authenticate_request(conn, spec)  # type: ignore[arg-type]
         return {
             "engine": engine,
             "endpoints": endpoints,
             "write_endpoints": write_endpoints,
             "mutation_ops": mutation_ops,
             "spec": spec,
+            "principal": principal,
         }
 
+    # Postponed annotations: bind the real class so FastAPI injects the connection.
+    context_getter.__annotations__["conn"] = HTTPConnection
     app.include_router(
         GraphQLRouter(_GRAPHQL_SCHEMA, context_getter=context_getter),
         prefix="/graphql",

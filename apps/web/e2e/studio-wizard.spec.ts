@@ -7,6 +7,7 @@ const DB_URL =
   "postgresql://postgres:postgres@db:5432/app";
 const API_BASE = process.env.API_BASE || "http://127.0.0.1:8000";
 const DATA_KEY = process.env.DATA_API_KEYS || "dev-data-key";
+const STUDIO_KEY = process.env.STUDIO_API_KEY || "dev-studio-key-change-me";
 
 test.describe("Studio wizard → data plane", () => {
   test("introspect, save & activate, then GET /data/customers", async ({
@@ -18,7 +19,12 @@ test.describe("Studio wizard → data plane", () => {
 
     const specName = `e2e_${Date.now().toString(36)}`;
 
+    // Studio is login-protected: signed-out visitors land on /login.
     await page.goto("/studio/new");
+    await page.waitForURL(/\/login/);
+    await page.getByTestId("login-key").fill(STUDIO_KEY);
+    await page.getByTestId("login-submit").click();
+    await page.waitForURL(/\/studio\/new/);
     await expect(page.getByRole("heading", { name: "New API" })).toBeVisible();
 
     await page.getByTestId("wizard-db-url-toggle").click();

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 from typing import Annotated, Any
 
@@ -124,11 +125,23 @@ def authenticate_request(request: Request, spec: ApiSpec) -> dict[str, Any]:
         keys = settings.data_api_key_set
         from contractapi.infrastructure.api_keys import list_keys
 
-        managed = list_keys()
-        if keys or managed:
-            enforce_data_api_key(request, keys)
+        if not keys and not any(not k["revoked"] for k in list_keys()):
+            # Fail closed: api_key mode with zero keys must not mean "open".
+            raise AppError(
+                type_="https://contractapi.dev/problems/unauthorized",
+                title="Unauthorized",
+                status=401,
+                detail=(
+                    "This API requires an API key, but none is configured. "
+                    "Create one in Studio → Ops → API keys (or set DATA_API_KEYS), "
+                    "or set auth: none for a public read-only API."
+                ),
+            )
+        enforce_data_api_key(request, keys)
+        provided = request.headers.get("X-API-Key") or ""
         return {
-            "sub": (request.headers.get("X-API-Key") or "api-key-client")[:16],
+            # Never use (part of) the secret as identity: it ends up in audit/logs.
+            "sub": "key:" + hashlib.sha256(provided.encode()).hexdigest()[:12],
             "roles": ["api_client"],
             "auth_mode": "api_key",
         }

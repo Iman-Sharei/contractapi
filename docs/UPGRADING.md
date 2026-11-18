@@ -1,5 +1,17 @@
 # Upgrading
 
+## 0.5.0 → next (security fixes)
+
+1. **Studio sign-in:** open `/login` and paste the server's `STUDIO_API_KEY` (or use SSO).
+   For local `npm run dev`, set `STUDIO_DEV_AUTOLOGIN=true` in `apps/web/.env.local`.
+2. **`POST /auth/token` removed** from data APIs. Get tokens from your IdP; for testing use
+   `POST /studio/token {"sub", "roles", "api", "claims"}`.
+3. **GraphQL:** drop the `claims:` argument — send a Bearer JWT (or API key) instead. `roles:`
+   still works but only narrows to roles already in the token.
+4. **`auth: api_key`** now needs at least one key (`DATA_API_KEYS` or Studio → Ops → API keys);
+   use `auth: none` for an intentionally public read-only API.
+5. **`ENVIRONMENT=production`** refuses to boot with default/short `STUDIO_API_KEY` / `JWT_SECRET`.
+
 ## 0.4.x → 0.5.0
 
 1. **PyPI name:** install `contractapi`. Import is `import contractapi`.

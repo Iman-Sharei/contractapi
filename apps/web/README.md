@@ -15,8 +15,15 @@ Open http://localhost:3000/studio
 ### Auth model
 
 Browser code talks to **Next route handlers** under `/api/studio/*` and `/api/data/*`.
-Those handlers inject `STUDIO_API_KEY` / `DATA_API_KEY` from **server** env.
-Do **not** put secrets in `NEXT_PUBLIC_*` for production.
+
+- `/studio/*` requires sign-in at `/login` with the server's `STUDIO_API_KEY` (or SSO when
+  Studio OIDC is configured). The key is verified against the backend and kept in an httpOnly,
+  `SameSite=Strict` cookie; the handlers forward it — they never inject a key for signed-out users.
+- `/api/data/*` (Studio "try it") also requires a signed-in session, then adds `DATA_API_KEY`.
+- Cross-site writes (foreign `Origin`) are rejected with 403.
+- Local dev only: `STUDIO_DEV_AUTOLOGIN=true` skips the login page (ignored in production builds).
+
+Do **not** put secrets in `NEXT_PUBLIC_*`.
 
 ## Scripts
 

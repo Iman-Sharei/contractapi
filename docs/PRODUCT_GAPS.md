@@ -13,7 +13,7 @@ No features currently require `CONTRACTAPI_EXPERIMENTAL`. The env var remains fo
 | Parquet list export | `pip install 'contractapi[parquet]'` + `parquet_export: true` |
 | DuckDB driver | `pip install 'contractapi[duckdb]'` + `database.driver: duckdb` |
 | Snowflake / BigQuery | `pip install 'contractapi[snowflake]'` / `[bigquery]` + `database.driver` |
-| GraphQL facade | `pip install 'contractapi[graphql]'` → `/graphql` (reads + RLS claims + mutations + poll subscriptions) |
+| GraphQL facade | `pip install 'contractapi[graphql]'` → `/graphql` (reads + token-based RLS/RBAC + mutations + poll subscriptions) |
 | Aggregation DSL | `aggregate:` with group_by, metrics, where, having, windows |
 | Studio OIDC (JWKS + cookie BFF) | `STUDIO_OIDC_ISSUER` (+ client_id / redirect_uri for browser cookies) |
 | Redis job queue | `JOB_QUEUE_ENABLED=true` + `REDIS_URL` (+ `contractapi worker`) |

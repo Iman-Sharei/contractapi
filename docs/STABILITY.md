@@ -15,7 +15,7 @@
 
 - Parquet list export (`pyarrow`)
 - DuckDB driver
-- GraphQL facade (`strawberry`) — table + SQL reads, nested relations, RBAC/`claims` RLS, mutations, poll subscriptions
+- GraphQL facade (`strawberry`) — table + SQL reads, nested relations, token-based RBAC + row-level, mutations, poll subscriptions
 - Aggregation DSL (`aggregate:`) — metrics + where/having/windows
 - Snowflake / BigQuery drivers (optional extras)
 - Studio OIDC JWKS + browser cookie BFF (`STUDIO_OIDC_*`) — API key remains break-glass

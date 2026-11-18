@@ -147,6 +147,9 @@ def run_cmd(
             console.print(f"[red]error[/red] {e}")
         raise typer.Exit(1)
 
+    from contractapi.core.config import get_settings
+
+    get_settings().assert_production_safe()
     fastapi_app = create_data_app(spec)
     console.print(f"Data API [bold]{spec.app.title}[/bold] on http://{host}:{port}/docs")
     uvicorn.run(fastapi_app, host=host, port=port, reload=False)

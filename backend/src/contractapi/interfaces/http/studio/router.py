@@ -332,14 +332,23 @@ def studio_diff_saved_specs(before: str, after: str) -> dict[str, Any]:
 
 @router.post("/token")
 def studio_issue_token(body: IssueTokenRequest) -> dict[str, str]:
-    """Mint a JWT for testing data-plane auth=jwt."""
+    """Mint a JWT for testing data-plane auth=jwt (admin-only; uses the target API's jwt config)."""
     from contractapi.domain.models.spec import JwtConfig
 
+    target = spec_store.get(body.api) if body.api else spec_store.active
+    if body.api and target is None:
+        raise AppError(
+            type_="https://contractapi.dev/problems/not-found",
+            title="Not Found",
+            status=404,
+            detail=f"No activated API named '{body.api}'. Activate it first.",
+        )
     token = issue_token(
         subject=body.sub,
         roles=body.roles,
-        jwt_cfg=JwtConfig(),
+        jwt_cfg=target.app.jwt if target else JwtConfig(),
         expires_minutes=body.expires_minutes,
+        extra=dict(body.claims) or None,
     )
     return {"access_token": token, "token_type": "bearer"}
 

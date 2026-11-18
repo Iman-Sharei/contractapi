@@ -46,6 +46,16 @@ export function StudioNav() {
       >
         Live docs <span className={styles.srOnly}>(opens in new tab)</span>
       </a>
+      <button
+        type="button"
+        className={styles.ghost}
+        onClick={async () => {
+          await fetch("/api/session", { method: "DELETE" });
+          window.location.assign("/login");
+        }}
+      >
+        Sign out
+      </button>
     </header>
   );
 }

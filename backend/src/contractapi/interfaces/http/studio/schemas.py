@@ -54,6 +54,11 @@ class IssueTokenRequest(BaseModel):
     sub: str = "demo-user"
     roles: list[str] = Field(default_factory=lambda: ["analyst"])
     expires_minutes: int = Field(default=60, ge=1, le=24 * 60)
+    # Active API whose jwt issuer/audience/algorithm the token targets (default: primary /data).
+    api: str | None = None
+    # Extra claims for testing row-level security (e.g. {"tenant_id": "acme"}).
+    # Reserved claims (sub, roles, exp, iss, aud, …) are ignored.
+    claims: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
 class SqlPreviewRequest(BaseModel):

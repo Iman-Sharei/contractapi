@@ -138,6 +138,40 @@ class Settings(BaseSettings):
     def experimental_enabled(self, feature: str) -> bool:
         return feature.lower() in self.experimental_set
 
+    def insecure_secret_problems(self) -> list[str]:
+        """Known-default or too-short secrets (fine for local dev, never for production)."""
+        problems: list[str] = []
+        if self.studio_api_key in _DEV_SECRETS or len(self.studio_api_key) < 16:
+            problems.append("STUDIO_API_KEY is a default/short value")
+        if self.jwt_secret in _DEV_SECRETS or len(self.jwt_secret) < 32:
+            problems.append("JWT_SECRET is a default value or shorter than 32 chars")
+        return problems
+
+    def assert_production_safe(self) -> None:
+        """Refuse to boot with dev secrets when ENVIRONMENT=production; warn elsewhere."""
+        problems = self.insecure_secret_problems()
+        if not problems:
+            return
+        if self.environment.strip().lower() == "production":
+            raise RuntimeError(
+                "Refusing to start in production: " + "; ".join(problems) + ". "
+                "Set strong values via environment variables."
+            )
+        import logging
+
+        logging.getLogger("contractapi.config").warning(
+            "Insecure dev secrets in use (%s). Never deploy like this.", "; ".join(problems)
+        )
+
+
+_DEV_SECRETS = frozenset(
+    {
+        "dev-studio-key-change-me",
+        "dev-jwt-secret-change-me-please-32chars",
+        "change-me",
+    }
+)
+
 
 @lru_cache
 def get_settings() -> Settings:

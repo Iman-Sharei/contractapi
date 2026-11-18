@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+### Security (breaking — see docs/UPGRADING.md)
+- Studio web requires sign-in (`/login`, Studio key or SSO); the Next BFF no longer injects
+  `STUDIO_API_KEY` / `DATA_API_KEY` for signed-out browsers, and blocks cross-site writes
+- Removed the unauthenticated data-plane `POST /auth/token`; extra claims can no longer
+  override `sub`/`roles`/`exp`/`iss`/`aud`/`jti`/`typ`. `POST /studio/token` now uses the target
+  API's `jwt` config and accepts test `claims`
+- GraphQL: roles/row-level come from the verified token only (`claims` argument removed;
+  `roles` can only narrow); endpoint `roles`, row-level, validations, audit, webhooks and cache
+  invalidation now apply to mutations; WebSocket subscriptions are authenticated
+- Response cache and idempotency keys are scoped per API contract and per row-level tenant/caller
+- `auth: api_key` with zero configured keys now returns 401 (was: open); API-key principals no
+  longer embed part of the key; production boot refuses default secrets
+
 ## 0.5.0 — 2026-11-10 (Beta)
 
 ### Deploy / hardening

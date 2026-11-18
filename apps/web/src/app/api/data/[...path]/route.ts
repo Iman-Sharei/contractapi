@@ -1,43 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  STUDIO_SESSION_COOKIE,
+  backendBase,
+  isCrossSiteWrite,
+  oidcCookieName,
+  problem,
+  resolveStudioKey,
+} from "@/lib/studioAuth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function backendBase() {
-  return (
-    process.env.API_BASE ||
-    process.env.NEXT_PUBLIC_API_BASE ||
-    "http://127.0.0.1:8000"
-  ).replace(/\/$/, "");
-}
-
-function dataKey() {
-  return process.env.DATA_API_KEY || process.env.NEXT_PUBLIC_DATA_API_KEY || "dev-data-key";
-}
-
+/** Studio "try it" proxy for the data plane — only for signed-in Studio users. */
 async function proxy(req: NextRequest, pathParts: string[]) {
+  const env = process.env;
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (isCrossSiteWrite(req.method, req.headers.get("origin"), host)) {
+    return problem(403, "Forbidden", "Cross-site request blocked.");
+  }
+  const signedIn =
+    resolveStudioKey(req.cookies.get(STUDIO_SESSION_COOKIE)?.value, env) ||
+    req.cookies.get(oidcCookieName(env))?.value;
+  if (!signedIn) {
+    return problem(401, "Unauthorized", "Sign in to Studio first.");
+  }
+
   const sub = pathParts.map(encodeURIComponent).join("/");
   const url = new URL(req.url);
-  const target = `${backendBase()}/data/${sub}${url.search}`;
+  const target = `${backendBase(env)}/data/${sub}${url.search}`;
 
   const headers = new Headers();
-  const ct = req.headers.get("content-type");
-  if (ct) headers.set("content-type", ct);
-  const accept = req.headers.get("accept");
-  if (accept) headers.set("accept", accept);
-
-  // Prefer client-forwarded auth; otherwise inject server-side data key for api_key mode.
+  for (const h of ["content-type", "accept", "if-match", "if-none-match", "idempotency-key"]) {
+    const v = req.headers.get(h);
+    if (v) headers.set(h, v);
+  }
+  // Prefer client-supplied auth (testing a JWT/key); otherwise the server-side data key.
   const auth = req.headers.get("authorization");
   const clientKey = req.headers.get("x-api-key");
+  const dataKey = env.DATA_API_KEY;
   if (auth) headers.set("authorization", auth);
   else if (clientKey) headers.set("X-API-Key", clientKey);
-  else headers.set("X-API-Key", dataKey());
+  else if (dataKey) headers.set("X-API-Key", dataKey);
 
-  const init: RequestInit = {
-    method: req.method,
-    headers,
-    cache: "no-store",
-  };
+  const init: RequestInit = { method: req.method, headers, cache: "no-store" };
   if (req.method !== "GET" && req.method !== "HEAD") {
     init.body = await req.arrayBuffer();
   }
@@ -45,7 +50,7 @@ async function proxy(req: NextRequest, pathParts: string[]) {
   const upstream = await fetch(target, init);
   const outHeaders = new Headers();
   upstream.headers.forEach((v, k) => {
-    if (["content-type", "link", "etag", "x-request-id", "idempotent-replayed"].includes(k)) {
+    if (["content-type", "link", "etag", "x-request-id", "idempotent-replayed", "retry-after"].includes(k)) {
       outHeaders.set(k, v);
     }
   });

@@ -179,6 +179,7 @@ def _restore_runtime() -> None:
 def create_studio_app() -> FastAPI:
     settings = get_settings()
     setup_logging(debug=settings.debug)
+    settings.assert_production_safe()
     _restore_runtime()
     # Job queue is GA when JOB_QUEUE_ENABLED + REDIS_URL (optional Redis worker).
     if settings.job_queue_enabled and settings.redis_url:
