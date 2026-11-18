@@ -11,7 +11,8 @@ test.describe("API page → editor → Use your API", () => {
     await page.goto("/login?next=/studio");
     await page.getByTestId("login-key").fill(STUDIO_KEY);
     await page.getByTestId("login-submit").click();
-    await page.waitForURL(/\/studio$/);
+    // Match the pathname: the login URL itself ends with "?next=/studio".
+    await page.waitForURL((u) => u.pathname === "/studio");
 
     // Seed a contract through the signed-in BFF (same cookies as the page).
     const saved = await page.request.post("/api/studio/specs", {
@@ -52,6 +53,8 @@ test.describe("API page → editor → Use your API", () => {
 
     // Editor explains a bad URL path before the server rejects it.
     const pathInput = page.getByLabel("Path (URL)");
+    // Wait until the editor finished loading the saved spec, or the load overwrites our edit.
+    await expect(pathInput).toHaveValue("/customers", { timeout: 30_000 });
     await pathInput.fill("/Bad Path");
     await expect(page.getByText(/Use lowercase letters/)).toBeVisible();
   });

@@ -24,7 +24,7 @@ test.describe("Studio wizard → data plane", () => {
     await page.waitForURL(/\/login/);
     await page.getByTestId("login-key").fill(STUDIO_KEY);
     await page.getByTestId("login-submit").click();
-    await page.waitForURL(/\/studio\/new/);
+    await page.waitForURL((u) => u.pathname === "/studio/new");
     await expect(page.getByRole("heading", { name: "New API" })).toBeVisible();
 
     await page.getByTestId("wizard-db-url-toggle").click();
