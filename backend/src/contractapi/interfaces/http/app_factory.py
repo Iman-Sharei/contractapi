@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from contractapi import __version__
 from contractapi.application.data_api_builder import create_data_app
 from contractapi.application.jobs import start_inline_worker
 from contractapi.application.studio_service import spec_store
@@ -196,7 +197,7 @@ def create_studio_app() -> FastAPI:
 
     app = FastAPI(
         title="contractapi Studio",
-        version="0.5.0",
+        version=__version__,
         description=(
             "Spec-first Postgres → FastAPI control plane (Beta). "
             "Design contracts in Studio, activate, then consume /data "
@@ -254,7 +255,7 @@ def create_studio_app() -> FastAPI:
         return {
             "status": "ok",
             "service": settings.app_name,
-            "version": "0.5.0",
+            "version": __version__,
             "maturity": "beta",
             "oidc": oidc_enabled(settings),
             "job_queue": bool(settings.job_queue_enabled and settings.redis_url),

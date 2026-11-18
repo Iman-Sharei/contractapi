@@ -310,3 +310,37 @@ def test_studio_introspect_error_is_actionable_without_secrets(monkeypatch):
     assert r.status_code == 400
     assert "hunter2" not in r.text
     assert r.json()["detail"].startswith("Could not connect to the database")
+
+
+# --- Low items: trace ids, activate names, version source --------------------------
+
+
+def test_trace_id_reused_only_when_well_formed(pg):
+    client = TestClient(create_data_app(_spec([{"name": "p", "path": "/p", "table": "parents", "schema": "med_h", "fields": ["id"]}])))
+    assert client.get("/health", headers={"X-Trace-Id": "abc12345-req"}).headers["x-trace-id"] == "abc12345-req"
+    bad = client.get("/health", headers={"X-Trace-Id": "x" * 500}).headers["x-trace-id"]
+    assert bad != "x" * 500 and len(bad) == 32
+    tp = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+    assert client.get("/health", headers={"traceparent": tp}).headers["x-trace-id"] == "4bf92f3577b34da6a3ce929d0e0e4736"
+
+
+def test_activate_rejects_unsafe_api_names(monkeypatch):
+    monkeypatch.setenv("RESTORE_ACTIVE_ON_BOOT", "false")
+    get_settings.cache_clear()
+    from contractapi.interfaces.http.app_factory import create_studio_app
+
+    client = TestClient(create_studio_app())
+    spec = {"database": {"url": PG}, "endpoints": [{"name": "x", "path": "/x", "table": "t", "fields": ["id"]}]}
+    r = client.post("/studio/activate/Bad%20Name", json={"spec": spec}, headers={"X-API-Key": get_settings().studio_api_key})
+    assert r.status_code == 400
+    assert r.json()["type"].endswith("/invalid-name")
+
+
+def test_health_reports_package_version(monkeypatch):
+    import contractapi
+
+    monkeypatch.setenv("RESTORE_ACTIVE_ON_BOOT", "false")
+    get_settings.cache_clear()
+    from contractapi.interfaces.http.app_factory import create_studio_app
+
+    assert TestClient(create_studio_app()).get("/health").json()["version"] == contractapi.__version__

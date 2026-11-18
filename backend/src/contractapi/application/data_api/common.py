@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -141,18 +142,16 @@ def _job_owner(spec: ApiSpec, request: Request) -> str:
     return f"{spec.namespace}:{principal.get('sub') or 'anon'}"
 
 
+_TRACE_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+_TRACEPARENT = re.compile(r"^[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$")
+
+
 def _ensure_trace(request: Request) -> str:
-    incoming = request.headers.get("traceparent") or request.headers.get("X-Trace-Id")
-    if incoming and "traceparent" in (request.headers.keys() if False else []):
-        pass
-    trace_id = request.headers.get("X-Trace-Id")
-    if not trace_id and request.headers.get("traceparent"):
-        # W3C: version-traceid-spanid-flags
-        parts = request.headers.get("traceparent", "").split("-")
-        if len(parts) >= 2:
-            trace_id = parts[1]
-    if not trace_id:
-        trace_id = uuid.uuid4().hex
+    """Reuse a caller's trace id only if well-formed (it is echoed in headers and logs)."""
+    trace_id = request.headers.get("X-Trace-Id") or ""
+    if not _TRACE_ID.match(trace_id):
+        m = _TRACEPARENT.match((request.headers.get("traceparent") or "").strip().lower())
+        trace_id = m.group(1) if m else uuid.uuid4().hex
     request.state.trace_id = trace_id
     return trace_id
 

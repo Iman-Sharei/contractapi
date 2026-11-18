@@ -190,7 +190,11 @@ def activate_spec(
     name: str | None = None,
     primary: bool = True,
 ) -> ApiSpec:
+    from contractapi.infrastructure.persistence.spec_repo import _safe_name
     from contractapi.infrastructure.secrets import secure_spec_payload
+
+    if name and name != "_default":
+        _safe_name(name)  # same rule as saved specs: it becomes the /apis/{name} URL
 
     # Runtime state (active.json) is persisted too: never with a literal password.
     raw = secure_spec_payload(raw, (name or "_default").strip() or "_default")
