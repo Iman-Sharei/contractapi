@@ -90,6 +90,8 @@ export function useEditorState({
   const [playBearer, setPlayBearer] = useState("");
   const [playRoles, setPlayRoles] = useState("analyst");
   const [playExpiresMin, setPlayExpiresMin] = useState(15);
+  // Extra JWT claims for testing row-level security, e.g. {"tenant_id": "acme"}.
+  const [playClaims, setPlayClaims] = useState("");
   const [playResult, setPlayResult] = useState<string>("");
   const [sqlDraft, setSqlDraft] = useState(
     "SELECT id, name, email, created_at\nFROM customers\nWHERE deleted_at IS NULL",
@@ -733,6 +735,17 @@ export function useEditorState({
     startTransition(async () => {
       try {
         let bearer = playBearer;
+        let claims: Record<string, string | number | boolean> = {};
+        if (playClaims.trim()) {
+          try {
+            const parsed: unknown = JSON.parse(playClaims);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+            claims = parsed as Record<string, string | number | boolean>;
+          } catch {
+            setPlayResult('Claims must be a JSON object, e.g. {"tenant_id": "acme"}.');
+            return;
+          }
+        }
         if (spec.app.auth === "jwt" && !bearer) {
           const roles = playRoles
             .split(",")
@@ -742,6 +755,7 @@ export function useEditorState({
             roles.length ? roles : ["analyst"],
             "studio-user",
             Number.isFinite(playExpiresMin) ? playExpiresMin : 15,
+            claims,
           );
           bearer = tok.access_token;
           setPlayBearer(bearer);
@@ -836,6 +850,8 @@ export function useEditorState({
     setPlayRoles,
     playExpiresMin,
     setPlayExpiresMin,
+    playClaims,
+    setPlayClaims,
     playResult,
     setPlayResult,
     sqlDraft,

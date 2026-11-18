@@ -5,7 +5,7 @@ import styles from "../studio.module.css";
 import { type EditorState } from "./useEditorState";
 
 export function PlayTab({ s }: { s: EditorState }) {
-  const { spec, pending, playMethod, setPlayMethod, playPath, setPlayPath, playQuery, setPlayQuery, playBody, setPlayBody, playBearer, setPlayBearer, playRoles, setPlayRoles, playExpiresMin, setPlayExpiresMin, playResult, endpoint, draftSpec, snippets, onCopy, onTry } = s;
+  const { spec, pending, playMethod, setPlayMethod, playPath, setPlayPath, playQuery, setPlayQuery, playBody, setPlayBody, playBearer, setPlayBearer, playRoles, setPlayRoles, playExpiresMin, setPlayExpiresMin, playClaims, setPlayClaims, playResult, endpoint, draftSpec, snippets, onCopy, onTry } = s;
   if (!endpoint) return null; // rendered only for a selected endpoint
   return (
     <>
@@ -54,8 +54,24 @@ export function PlayTab({ s }: { s: EditorState }) {
               JWT roles
               <input
                 value={playRoles}
-                onChange={(e) => setPlayRoles(e.target.value)}
+                onChange={(e) => {
+                  setPlayRoles(e.target.value);
+                  setPlayBearer(""); // new roles → mint a new test token
+                }}
                 placeholder="analyst, admin"
+              />
+            </label>
+            <label className={styles.span2}>
+              Claims (JSON, for row-level testing)
+              <input
+                value={playClaims}
+                onChange={(e) => {
+                  setPlayClaims(e.target.value);
+                  setPlayBearer(""); // new claims → mint a new test token
+                }}
+                placeholder='{"tenant_id": "acme"}'
+                spellCheck={false}
+                data-testid="play-claims"
               />
             </label>
             <label>

@@ -1,4 +1,5 @@
 import { formatApiError } from "./formatError";
+import { toYaml } from "./yaml";
 import type {
   ActiveApiMount,
   ActiveInfo,
@@ -210,10 +211,11 @@ export async function issueToken(
   roles: string[] = ["analyst"],
   sub = "studio-user",
   expiresMinutes = 15,
+  claims: Record<string, string | number | boolean> = {},
 ) {
   return studioFetch<{ access_token: string; token_type: string }>("/token", {
     method: "POST",
-    body: JSON.stringify({ sub, roles, expires_minutes: expiresMinutes }),
+    body: JSON.stringify({ sub, roles, expires_minutes: expiresMinutes, claims }),
   });
 }
 
@@ -441,214 +443,7 @@ print(df.head())`;
 }
 
 /** Local fallback YAML when dump-yaml is unavailable. Prefer dumpYaml(). */
+/** Local YAML preview of a draft contract (the server's /dump-yaml stays canonical). */
 export function buildYaml(spec: ApiSpecDraft): string {
-  const lines: string[] = [];
-  const app = spec.app;
-  lines.push("database:");
-  lines.push(`  url: ${spec.database.url}`);
-  if ((spec.database as { driver?: string }).driver) {
-    lines.push(`  driver: ${(spec.database as { driver?: string }).driver}`);
-  }
-  lines.push("app:");
-  lines.push(`  title: ${JSON.stringify(app.title)}`);
-  lines.push(`  version: ${app.version}`);
-  lines.push(`  description: ${JSON.stringify(app.description)}`);
-  lines.push(`  read_only: ${app.read_only}`);
-  lines.push(`  auth: ${app.auth}`);
-  lines.push(`  api_prefix: ${JSON.stringify(app.api_prefix ?? "")}`);
-  if (app.legacy_api_prefix) lines.push(`  legacy_api_prefix: ${app.legacy_api_prefix}`);
-  if (app.environment) lines.push(`  environment: ${app.environment}`);
-  lines.push(`  audit_enabled: ${app.audit_enabled ?? true}`);
-  lines.push(`  compression: ${app.compression ?? true}`);
-  lines.push(`  tracing: ${app.tracing ?? true}`);
-  if (app.ip_allowlist?.length) {
-    lines.push(`  ip_allowlist: [${app.ip_allowlist.map((x) => JSON.stringify(x)).join(", ")}]`);
-  }
-  if (app.jwt) {
-    lines.push("  jwt:");
-    lines.push(`    issuer: ${JSON.stringify(app.jwt.issuer)}`);
-    lines.push(`    audience: ${JSON.stringify(app.jwt.audience)}`);
-    lines.push(`    algorithm: ${app.jwt.algorithm}`);
-    lines.push(`    access_ttl_minutes: ${app.jwt.access_ttl_minutes}`);
-    lines.push(`    refresh_ttl_days: ${app.jwt.refresh_ttl_days}`);
-  }
-  if (app.webhooks?.length) {
-    lines.push("  webhooks:");
-    for (const wh of app.webhooks) {
-      lines.push(`    - url: ${JSON.stringify(wh.url)}`);
-      lines.push(`      events: [${(wh.events || []).join(", ")}]`);
-      if (wh.secret) lines.push(`      secret: ${JSON.stringify(wh.secret)}`);
-      if (wh.timeout_seconds != null) lines.push(`      timeout_seconds: ${wh.timeout_seconds}`);
-    }
-  }
-  if (app.cache) {
-    lines.push("  cache:");
-    lines.push(`    enabled: ${app.cache.enabled}`);
-    lines.push(`    ttl_seconds: ${app.cache.ttl_seconds}`);
-  }
-  if (app.idempotency) {
-    lines.push("  idempotency:");
-    lines.push(`    enabled: ${app.idempotency.enabled}`);
-    lines.push(`    required_for_writes: ${app.idempotency.required_for_writes ?? false}`);
-    if (app.idempotency.ttl_seconds != null) {
-      lines.push(`    ttl_seconds: ${app.idempotency.ttl_seconds}`);
-    }
-  }
-  lines.push("  rate_limit:");
-  lines.push(`    enabled: ${app.rate_limit.enabled}`);
-  lines.push(`    requests_per_minute: ${app.rate_limit.requests_per_minute}`);
-  if (app.rbac?.length) {
-    lines.push("  rbac:");
-    for (const role of app.rbac) {
-      lines.push(`    - role: ${role.role}`);
-      lines.push("      endpoints:");
-      for (const [ep, fields] of Object.entries(role.endpoints)) {
-        lines.push(`        ${ep}: [${fields.join(", ")}]`);
-      }
-    }
-  }
-  lines.push("endpoints:");
-  for (const ep of spec.endpoints) {
-    lines.push(`  - name: ${ep.name}`);
-    lines.push(`    path: ${ep.path}`);
-    if (ep.aggregate) {
-      lines.push("    aggregate:");
-      lines.push(`      table: ${ep.aggregate.table}`);
-      lines.push(`      schema: ${ep.aggregate.schema ?? "public"}`);
-      lines.push(`      group_by: [${(ep.aggregate.group_by || []).join(", ")}]`);
-      if (ep.aggregate.where?.length) {
-        lines.push("      where:");
-        for (const w of ep.aggregate.where) {
-          lines.push(`        - field: ${w.field}`);
-          lines.push(`          op: ${w.op}`);
-          lines.push(`          value: ${JSON.stringify(w.value)}`);
-        }
-      }
-      lines.push("      metrics:");
-      for (const m of ep.aggregate.metrics || []) {
-        lines.push(`        - name: ${m.name}`);
-        lines.push(`          op: ${m.op}`);
-        if (m.field) lines.push(`          field: ${m.field}`);
-      }
-      if (ep.aggregate.having?.length) {
-        lines.push("      having:");
-        for (const h of ep.aggregate.having) {
-          lines.push(`        - metric: ${h.metric}`);
-          lines.push(`          op: ${h.op}`);
-          lines.push(`          value: ${h.value}`);
-        }
-      }
-      if (ep.aggregate.windows?.length) {
-        lines.push("      windows:");
-        for (const win of ep.aggregate.windows) {
-          lines.push(`        - name: ${win.name}`);
-          lines.push(`          op: ${win.op}`);
-          if (win.field) lines.push(`          field: ${win.field}`);
-          if (win.partition_by?.length) {
-            lines.push(`          partition_by: [${win.partition_by.join(", ")}]`);
-          }
-          if (win.order_by?.length) {
-            lines.push(`          order_by: [${win.order_by.join(", ")}]`);
-          }
-        }
-      }
-    } else if (ep.sql) {
-      lines.push("    sql: |");
-      for (const ln of ep.sql.split("\n")) lines.push(`      ${ln}`);
-      if (ep.sql_params?.length) {
-        lines.push("    sql_params:");
-        for (const p of ep.sql_params) {
-          lines.push(`      - name: ${p.name}`);
-          lines.push(`        type: ${p.type}`);
-          if (p.required != null) lines.push(`        required: ${p.required}`);
-          if (p.default != null) lines.push(`        default: ${JSON.stringify(p.default)}`);
-        }
-      }
-    } else {
-      lines.push(`    table: ${ep.table}`);
-      lines.push(`    schema: ${ep.schema}`);
-    }
-    lines.push(`    methods: [${ep.methods.join(", ")}]`);
-    lines.push(`    primary_key: ${ep.primary_key}`);
-    lines.push(`    fields: [${ep.fields.join(", ")}]`);
-    if (ep.writable_fields?.length) {
-      lines.push(`    writable_fields: [${ep.writable_fields.join(", ")}]`);
-    }
-    lines.push(`    filters: [${ep.filters.join(", ")}]`);
-    if (ep.filter_operators?.length) {
-      lines.push(`    filter_operators: [${ep.filter_operators.join(", ")}]`);
-    }
-    if (ep.search_param !== undefined) {
-      lines.push(
-        ep.search_param === null
-          ? "    search_param: null"
-          : `    search_param: ${ep.search_param}`,
-      );
-    }
-    lines.push(`    sortable: [${ep.sortable.join(", ")}]`);
-    if (ep.etag_field) lines.push(`    etag_field: ${ep.etag_field}`);
-    if (ep.soft_delete) {
-      lines.push("    soft_delete:");
-      lines.push(`      column: ${ep.soft_delete.column}`);
-    }
-    if (ep.row_level) {
-      lines.push("    row_level:");
-      lines.push(`      column: ${ep.row_level.column}`);
-      lines.push(`      claim: ${ep.row_level.claim}`);
-      lines.push(`      required: ${ep.row_level.required}`);
-    }
-    if (ep.validations?.length) {
-      lines.push("    validations:");
-      for (const v of ep.validations) {
-        lines.push(`      - field: ${v.field}`);
-        if (v.format) lines.push(`        format: ${v.format}`);
-        if (v.min_length != null) lines.push(`        min_length: ${v.min_length}`);
-        if (v.max_length != null) lines.push(`        max_length: ${v.max_length}`);
-        if (v.pattern) lines.push(`        pattern: ${JSON.stringify(v.pattern)}`);
-        if (v.ge != null) lines.push(`        ge: ${v.ge}`);
-        if (v.le != null) lines.push(`        le: ${v.le}`);
-      }
-    }
-    const pag = ep.pagination ?? {
-      enabled: true,
-      mode: "cursor" as const,
-      default_limit: 20,
-      max_limit: 100,
-    };
-    lines.push("    pagination:");
-    lines.push(`      enabled: ${pag.enabled}`);
-    lines.push(`      mode: ${pag.mode}`);
-    lines.push(`      default_limit: ${pag.default_limit}`);
-    lines.push(`      max_limit: ${pag.max_limit}`);
-    if (ep.bulk_enabled != null) lines.push(`    bulk_enabled: ${ep.bulk_enabled}`);
-    if (ep.async_writes) lines.push(`    async_writes: true`);
-    if (ep.csv_export != null) lines.push(`    csv_export: ${ep.csv_export}`);
-    if (ep.ndjson_export != null) lines.push(`    ndjson_export: ${ep.ndjson_export}`);
-    if (ep.parquet_export) lines.push(`    parquet_export: true`);
-    if (ep.relations?.length) {
-      lines.push("    relations:");
-      for (const rel of ep.relations) {
-        lines.push(`      - name: ${rel.name}`);
-        lines.push(`        table: ${rel.table}`);
-        lines.push(`        schema: ${rel.schema}`);
-        lines.push(`        type: ${rel.type}`);
-        lines.push(`        local_key: ${rel.local_key}`);
-        lines.push(`        foreign_key: ${rel.foreign_key}`);
-        lines.push(`        primary_key: ${rel.primary_key}`);
-        lines.push(`        fields: [${rel.fields.join(", ")}]`);
-        lines.push(`        max_per_parent: ${rel.max_per_parent}`);
-      }
-    }
-    if (ep.roles?.length) lines.push(`    roles: [${ep.roles.join(", ")}]`);
-    if (ep.description) lines.push(`    description: ${JSON.stringify(ep.description)}`);
-    if (ep.allow_sensitive) lines.push(`    allow_sensitive: true`);
-    if (ep.deprecation?.deprecated) {
-      lines.push("    deprecation:");
-      lines.push("      deprecated: true");
-      if (ep.deprecation.sunset) lines.push(`      sunset: ${ep.deprecation.sunset}`);
-      if (ep.deprecation.successor) lines.push(`      successor: ${ep.deprecation.successor}`);
-      if (ep.deprecation.link) lines.push(`      link: ${ep.deprecation.link}`);
-    }
-  }
-  return lines.join("\n");
+  return toYaml(spec as unknown as Record<string, unknown>);
 }

@@ -20,7 +20,20 @@ Terminate TLS at Caddy/Nginx/Traefik:
 - `https://studio.example.com` → `web:3000`
 - `https://api.example.com` → `api:8000` (data-plane + studio API if needed)
 
-Forward `X-Forwarded-For` / `X-Forwarded-Proto` so IP allowlists work.
+Forward `X-Forwarded-For` / `X-Forwarded-Proto`, and set `TRUSTED_PROXIES` on the API to the
+proxy's IPs/CIDRs (e.g. `TRUSTED_PROXIES=10.0.0.0/8`). The API only honors `X-Forwarded-For` from
+those addresses, so clients cannot spoof their IP past `ip_allowlist`.
+
+### Studio sign-in behind a proxy
+
+- Users sign in at `https://studio.example.com/login` with `STUDIO_API_KEY` (or SSO).
+- **SSO (OIDC):** register the redirect URI **on the Studio origin** —
+  `https://studio.example.com/api/studio/oidc/callback` — and set
+  `STUDIO_OIDC_REDIRECT_URI` to the same value plus `STUDIO_OIDC_POST_LOGIN_URL=https://studio.example.com`.
+  The login cookies then belong to the Studio site even when the API lives on another domain.
+- Set `STUDIO_OIDC_CLIENT_ID` (or `STUDIO_OIDC_AUDIENCE`); the IdP client must allow PKCE (S256).
+- Without Redis, cache / rate limits / idempotency / jobs are per process: run one API worker,
+  or set `REDIS_URL` before scaling out.
 
 ## Pip-only (API without Studio UI)
 

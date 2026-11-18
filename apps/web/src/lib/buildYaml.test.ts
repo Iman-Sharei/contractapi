@@ -63,3 +63,45 @@ describe("buildYaml", () => {
     expect(yaml).toContain("required_for_writes: true");
   });
 });
+
+describe("buildYaml quoting", () => {
+  const tricky: ApiSpecDraft = {
+    ...sample,
+    database: { url: "duckdb:///:memory:", driver: "duckdb" },
+    app: { ...sample.app, title: "Sales: 2026 #1", version: "1.0" },
+    endpoints: [
+      {
+        ...sample.endpoints[0],
+        name: "stats",
+        path: "/stats",
+        sql: "SELECT id, 'a: b' AS note\nFROM t WHERE x::int > :min",
+      },
+      {
+        ...sample.endpoints[0],
+        relations: [
+          {
+            name: "items", table: "items", schema: "public", type: "one_to_many", local_key: "id",
+            foreign_key: "order_id", fields: ["id"], primary_key: "id", max_per_parent: 5,
+            soft_delete_column: "deleted_at",
+          },
+        ],
+      },
+    ],
+  };
+
+  it("quotes values YAML would misread and keeps every field", () => {
+    const yaml = buildYaml(tricky);
+    expect(yaml).toContain('url: "duckdb:///:memory:"');
+    expect(yaml).toContain('title: "Sales: 2026 #1"');
+    expect(yaml).toContain('version: "1.0"');
+    expect(yaml).toContain("sql: |-\n      SELECT id, 'a: b' AS note\n      FROM t WHERE x::int > :min");
+    expect(yaml).toContain("soft_delete_column: deleted_at");
+    expect(yaml).toContain("enabled: true");
+  });
+
+  it("writes the YAML for the round-trip check when asked", async () => {
+    if (!process.env.YAML_ROUNDTRIP_OUT) return;
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(process.env.YAML_ROUNDTRIP_OUT, buildYaml(tricky));
+  });
+});

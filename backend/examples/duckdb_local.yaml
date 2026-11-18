@@ -3,7 +3,7 @@
 # Point url at a .duckdb file or :memory: with views over Parquet.
 # No CONTRACTAPI_EXPERIMENTAL flag needed.
 database:
-  url: duckdb:///:memory:
+  url: "duckdb:///:memory:"
   driver: duckdb
 
 app:

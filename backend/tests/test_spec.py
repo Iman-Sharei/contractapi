@@ -105,3 +105,20 @@ def test_endpoint_name_pattern():
             table="x",
             fields=["id"],
         )
+
+
+def test_every_example_spec_loads():
+    """Shipped examples are documentation: each must parse and validate."""
+    from pathlib import Path
+
+    import pytest
+
+    from contractapi.domain.models.spec import load_spec
+
+    examples = sorted((Path(__file__).parent.parent / "examples").glob("*.yaml"))
+    assert examples
+    for path in examples:
+        try:
+            load_spec(path)
+        except Exception as exc:  # noqa: BLE001 — report which file broke
+            pytest.fail(f"{path.name}: {exc}")
