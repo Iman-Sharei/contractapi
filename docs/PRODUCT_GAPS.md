@@ -1,6 +1,6 @@
 # Remaining gaps (post-Beta)
 
-**Maturity:** Beta `0.6.0` — see [STABILITY.md](STABILITY.md).
+**Maturity:** Beta `0.6.1` — see [STABILITY.md](STABILITY.md).
 
 ## Experimental
 

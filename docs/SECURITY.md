@@ -47,6 +47,8 @@ We aim to acknowledge within **72 hours** and ship a fix or mitigation advisory 
    DB passwords/webhook secrets live in `SPECS_DIR/.secrets` (0600) — protect and back up that folder.
    Webhooks cannot reach private networks unless `WEBHOOK_ALLOW_PRIVATE=true`.
    Studio OIDC requires `STUDIO_OIDC_CLIENT_ID` or `STUDIO_OIDC_AUDIENCE` (PKCE + nonce enforced).
+   Studio sessions are signed tokens (`STUDIO_SESSION_SECRET`, default derived from `STUDIO_API_KEY`).
+   Set `SECRETS_ENCRYPTION_KEY` to encrypt stored DB passwords and webhook secrets at rest.
 6. Put Redis on a private network; enable `JOB_QUEUE_ENABLED` only if you run workers you trust.
 7. Rotate managed API keys via Studio Ops; revoke on leak.
 8. Keep `audit_enabled` and ship `AUDIT_LOG_PATH` off-box.

@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here.
 
+## 0.6.1 — 2026-11-19 (Beta)
+
+### Fixes
+- `examples/duckdb_local.yaml` did not parse; CI now loads every example
+- Studio YAML preview could produce invalid YAML (unquoted URLs/SQL) and dropped some fields;
+  it now uses a generic emitter that quotes what YAML would misread and round-trips through the API
+- Play tab can send JWT claims, so row-level security is testable from the UI
+- SSO callbacks routed through the Studio origin work (OIDC state cookie is forwarded)
+
+### Security
+- Studio session cookie is a signed, expiring token (HMAC of `STUDIO_SESSION_SECRET`, or derived
+  from `STUDIO_API_KEY`); it never contains the key. Rotating either secret signs everyone out
+- Webhooks connect to the exact IP that passed the SSRF check (closes DNS rebinding); TLS still
+  verifies the hostname
+- Optional `SECRETS_ENCRYPTION_KEY`: AES-256-GCM encryption of the secret store at rest;
+  existing plaintext entries are re-encrypted on first read
+
+### Internal
+- Large modules split (largest ~350 lines); public import paths unchanged
+- Agent rules tracked: `.claude/` is the source, `scripts/sync_agent_rules.py` generates `.cursor/rules`
+
 ## 0.6.0 — 2026-11-18 (Beta)
 
 Security-hardening and usability release. **Breaking changes** — read

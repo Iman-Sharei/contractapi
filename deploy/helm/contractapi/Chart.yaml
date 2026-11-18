@@ -2,5 +2,5 @@ apiVersion: v2
 name: contractapi
 description: Spec-first Postgres → FastAPI (contractapi)
 type: application
-version: 0.2.0
-appVersion: "0.6.0"
+version: 0.2.1
+appVersion: "0.6.1"

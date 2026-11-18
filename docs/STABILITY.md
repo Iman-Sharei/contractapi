@@ -1,6 +1,6 @@
 # Stability & SemVer (Beta)
 
-**Status:** `0.6.0` — **Beta**. Suitable for early production on a **single self-hosted node** with known limits.
+**Status:** `0.6.1` — **Beta**. Suitable for early production on a **single self-hosted node** with known limits.
 
 ## What is stable in 0.6.x
 

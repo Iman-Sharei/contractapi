@@ -1,5 +1,16 @@
 # Upgrading
 
+## 0.6.0 → 0.6.1
+
+1. **Sign in once more:** Studio session cookies changed format (signed token instead of the key).
+2. **Optional:** set `STUDIO_SESSION_SECRET` on the Studio (web) server to sign sessions with a
+   dedicated secret; rotating it (or `STUDIO_API_KEY`) signs everyone out.
+3. **Optional:** set `SECRETS_ENCRYPTION_KEY` on the API (and workers) to encrypt the secret store;
+   needs the `cryptography` package (`contractapi[oidc]`). Keep the key outside `SPECS_DIR` and back it up —
+   encrypted secrets cannot be read without it.
+4. **SSO behind a proxy:** you can now register `https://<studio>/api/studio/oidc/callback` as the
+   redirect URI (see `docs/PRODUCTION.md`).
+
 ## 0.5.x → 0.6.0
 
 1. **Studio sign-in:** open `/login` and paste the server's `STUDIO_API_KEY` (or use SSO).
