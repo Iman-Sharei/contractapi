@@ -50,7 +50,8 @@ function LoginForm() {
       <h1 className={styles.title}>Sign in to Studio</h1>
       <p className={styles.lede}>
         Paste the Studio key your administrator gave you (the <code>STUDIO_API_KEY</code> of the
-        server). It is kept in a secure, browser-only cookie.
+        server). The key is only checked here — your browser keeps a signed sign-in that expires
+        after 12 hours, never the key itself.
       </p>
       <form onSubmit={submit} className={styles.panel} style={{ display: "grid", gap: 12 }}>
         <label className={styles.field}>
