@@ -5,7 +5,7 @@ import {
   isCrossSiteWrite,
   oidcCookieName,
   problem,
-  resolveStudioKey,
+  studioKeyForRequest,
 } from "@/lib/studioAuth";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ async function proxy(req: NextRequest, pathParts: string[]) {
     return problem(403, "Forbidden", "Cross-site request blocked.");
   }
   const signedIn =
-    resolveStudioKey(req.cookies.get(STUDIO_SESSION_COOKIE)?.value, env) ||
+    (await studioKeyForRequest(req.cookies.get(STUDIO_SESSION_COOKIE)?.value, env)) ||
     req.cookies.get(oidcCookieName(env))?.value;
   if (!signedIn) {
     return problem(401, "Unauthorized", "Sign in to Studio first.");

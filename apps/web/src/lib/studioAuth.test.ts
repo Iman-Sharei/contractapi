@@ -1,17 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { devAutologinKey, isCrossSiteWrite, resolveStudioKey } from "./studioAuth";
+import {
+  createSessionToken,
+  devAutologin,
+  isCrossSiteWrite,
+  looksLikeLiveSession,
+  studioKeyForRequest,
+  verifySessionToken,
+} from "./studioAuth";
 
-describe("resolveStudioKey", () => {
-  it("is null without a session (the BFF must not inject a key)", () => {
-    expect(resolveStudioKey(undefined, { STUDIO_API_KEY: "k" })).toBeNull();
+const env = { STUDIO_API_KEY: "server-key-123", NODE_ENV: "production" };
+
+describe("signed Studio session", () => {
+  it("round-trips and never contains the key", async () => {
+    const token = await createSessionToken(env);
+    expect(token).not.toContain("server-key-123");
+    expect(await verifySessionToken(token, env)).toBe(true);
+    expect(await studioKeyForRequest(token, env)).toBe("server-key-123");
   });
-  it("uses the session cookie value", () => {
-    expect(resolveStudioKey("from-cookie", {})).toBe("from-cookie");
+  it("rejects tampering, expiry and key rotation", async () => {
+    const token = await createSessionToken(env);
+    const [v, exp, nonce, sig] = token.split(".");
+    expect(await verifySessionToken(`${v}.${Number(exp) + 999}.${nonce}.${sig}`, env)).toBe(false);
+    expect(await verifySessionToken(token, env, Date.now() + 13 * 3600 * 1000)).toBe(false);
+    expect(await verifySessionToken(token, { ...env, STUDIO_API_KEY: "rotated" })).toBe(false);
+    expect(await studioKeyForRequest("garbage", env)).toBeNull();
+    expect(await studioKeyForRequest(undefined, env)).toBeNull();
+  });
+  it("middleware shape check follows expiry", async () => {
+    const token = await createSessionToken(env);
+    expect(looksLikeLiveSession(token)).toBe(true);
+    expect(looksLikeLiveSession(token, Date.now() + 13 * 3600 * 1000)).toBe(false);
+    expect(looksLikeLiveSession("server-key-123")).toBe(false);
   });
   it("dev autologin never applies to production builds", () => {
-    const env = { NODE_ENV: "production", STUDIO_DEV_AUTOLOGIN: "true", STUDIO_API_KEY: "k" };
-    expect(devAutologinKey(env)).toBeNull();
-    expect(devAutologinKey({ ...env, NODE_ENV: "development" })).toBe("k");
+    expect(devAutologin({ ...env, STUDIO_DEV_AUTOLOGIN: "true" })).toBe(false);
+    expect(devAutologin({ NODE_ENV: "development", STUDIO_DEV_AUTOLOGIN: "true" })).toBe(true);
   });
 });
 

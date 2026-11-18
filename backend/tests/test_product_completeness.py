@@ -325,3 +325,29 @@ def test_boot_restore_moves_literal_passwords_out_of_runtime_state(tmp_path, mon
         assert "${secret:db-legacy}" in json.loads(persisted)["specs"]["legacy"]["database"]["url"]
     finally:
         spec_store.clear()
+
+
+def test_secret_store_encryption_at_rest(tmp_path, monkeypatch):
+    pytest.importorskip("cryptography")
+    from contractapi.infrastructure.secrets import get_secret, put_secret
+
+    secret_file = tmp_path / "specs" / ".secrets" / "db-x"
+    put_secret("db-x", "plain-before-key")  # written before encryption was enabled
+    assert secret_file.read_text() == "plain-before-key"
+
+    monkeypatch.setenv("SECRETS_ENCRYPTION_KEY", "k" * 40)
+    get_settings.cache_clear()
+    assert get_secret("db-x") == "plain-before-key"  # migrated on read
+    assert "plain-before-key" not in secret_file.read_text()
+    put_secret("db-y", "s3cret")
+    assert "s3cret" not in (tmp_path / "specs" / ".secrets" / "db-y").read_text()
+    assert get_secret("db-y") == "s3cret"
+
+    monkeypatch.setenv("SECRETS_ENCRYPTION_KEY", "wrong-key")
+    get_settings.cache_clear()
+    with pytest.raises(AppError, match="does not match"):
+        get_secret("db-y")
+    monkeypatch.delenv("SECRETS_ENCRYPTION_KEY")
+    get_settings.cache_clear()
+    with pytest.raises(AppError, match="encrypted"):
+        get_secret("db-y")

@@ -344,3 +344,47 @@ def test_health_reports_package_version(monkeypatch):
     from contractapi.interfaces.http.app_factory import create_studio_app
 
     assert TestClient(create_studio_app()).get("/health").json()["version"] == contractapi.__version__
+
+
+def test_webhook_connects_to_the_checked_ip_even_if_dns_changes(monkeypatch):
+    """DNS rebinding: the first (checked, public) answer is the address we connect to."""
+    import socket
+
+    from contractapi.infrastructure import net_guard
+
+    answers = iter([[(0, 0, 0, "", ("93.184.216.34", 80))], [(0, 0, 0, "", ("127.0.0.1", 80))]])
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: next(answers))
+    seen = {}
+
+    def fake_connect(addr, *a, **k):
+        seen["addr"] = addr
+        raise ConnectionRefusedError("stop here")
+
+    monkeypatch.setattr(socket, "create_connection", fake_connect)
+    with pytest.raises(ConnectionRefusedError):
+        net_guard.post_checked("http://rebind.example/hook", b"{}", {}, 1.0)
+    assert seen["addr"] == ("93.184.216.34", 80)
+
+
+def test_webhook_redirects_are_refused(monkeypatch):
+    import http.server
+    import threading
+
+    from contractapi.infrastructure import net_guard
+
+    class Redirect(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(302)
+            self.send_header("Location", "http://169.254.169.254/")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Redirect)
+    threading.Thread(target=srv.handle_request, daemon=True).start()
+    monkeypatch.setenv("WEBHOOK_ALLOW_PRIVATE", "true")
+    get_settings.cache_clear()
+    with pytest.raises(net_guard.BlockedDestination, match="redirects"):
+        net_guard.post_checked(f"http://127.0.0.1:{srv.server_port}/hook", b"{}", {}, 2.0)
+    srv.server_close()

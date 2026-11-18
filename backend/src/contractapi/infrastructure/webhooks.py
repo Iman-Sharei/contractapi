@@ -9,7 +9,6 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-from urllib import request as urlrequest
 
 from contractapi.core.config import get_settings
 from contractapi.core.logging import get_logger
@@ -111,11 +110,10 @@ def _send_once(hook: WebhookConfig, body: bytes) -> None:
 
         sig = hmac.new(resolve_refs(hook.secret).encode(), body, hashlib.sha256).hexdigest()
         headers["X-Contractapi-Signature"] = f"sha256={sig}"
-    from contractapi.infrastructure.net_guard import assert_public_url, safe_opener
+    from contractapi.infrastructure.net_guard import post_checked
 
-    assert_public_url(hook.url)  # SSRF: never call internal/cloud-metadata addresses
-    req = urlrequest.Request(hook.url, data=body, headers=headers, method="POST")
-    with safe_opener().open(req, timeout=hook.timeout_seconds) as resp:
-        if resp.status >= 400:
-            raise RuntimeError(f"HTTP {resp.status}")
-        logger.info("webhook ok url=%s status=%s", hook.url, resp.status)
+    # SSRF-safe: checked public IP only, connection pinned to it, no redirects.
+    status = post_checked(hook.url, body, headers, hook.timeout_seconds)
+    if status >= 400:
+        raise RuntimeError(f"HTTP {status}")
+    logger.info("webhook ok url=%s status=%s", hook.url, status)

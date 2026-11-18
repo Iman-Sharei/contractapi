@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  OIDC_STATE_COOKIE,
   STUDIO_SESSION_COOKIE,
   backendBase,
   isCrossSiteWrite,
   oidcCookieName,
   problem,
-  resolveStudioKey,
+  studioKeyForRequest,
 } from "@/lib/studioAuth";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ async function proxy(req: NextRequest, pathParts: string[]) {
 
   // OIDC login endpoints are public on the backend; everything else needs a Studio session.
   const isOidcRoute = pathParts[0] === "oidc";
-  const key = resolveStudioKey(req.cookies.get(STUDIO_SESSION_COOKIE)?.value, env);
+  const key = await studioKeyForRequest(req.cookies.get(STUDIO_SESSION_COOKIE)?.value, env);
   const oidcCookie = req.cookies.get(oidcCookieName(env))?.value;
   if (!isOidcRoute && !key && !oidcCookie) {
     return problem(401, "Unauthorized", "Sign in to Studio first.");
@@ -36,7 +37,12 @@ async function proxy(req: NextRequest, pathParts: string[]) {
     if (v) headers.set(h, v);
   }
   if (key) headers.set("X-API-Key", key);
-  if (oidcCookie) headers.set("cookie", `${oidcCookieName(env)}=${oidcCookie}`);
+  // Forward only the OIDC cookies the backend needs (session + login state for /oidc/callback).
+  const forwarded = [oidcCookieName(env), OIDC_STATE_COOKIE]
+    .map((name) => [name, req.cookies.get(name)?.value] as const)
+    .filter(([, v]) => v)
+    .map(([name, v]) => `${name}=${v}`);
+  if (forwarded.length) headers.set("cookie", forwarded.join("; "));
 
   // manual: OIDC login answers with a redirect to the IdP that the browser must follow.
   const init: RequestInit = { method: req.method, headers, cache: "no-store", redirect: "manual" };

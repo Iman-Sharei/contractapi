@@ -4,9 +4,10 @@ Specs are YAML meant for git, so they must never hold a database password. Studi
 a literal password into `SPECS_DIR/.secrets/<name>` (0600) and writes a reference instead.
 DevOps can use `${env:VAR}` to read from the environment.
 
-ponytail: plaintext files protected by filesystem permissions. Ceiling: anyone with
-read access to SPECS_DIR as the service user can read them; upgrade path is a KMS /
-Vault backend behind put_secret/get_secret.
+Files are 0600. With SECRETS_ENCRYPTION_KEY set they are also encrypted (AES-256-GCM,
+`cryptography` package), so a copied SPECS_DIR or backup is useless without the key.
+Plaintext files written before the key was set are re-encrypted on first read.
+A KMS/Vault backend would plug in behind put_secret/get_secret.
 """
 
 from __future__ import annotations
@@ -43,19 +44,89 @@ def _check_name(name: str) -> str:
     return name
 
 
-def put_secret(name: str, value: str) -> str:
-    """Store a secret and return its `${secret:NAME}` reference."""
-    path = _store_dir() / _check_name(name)
+_ENC_PREFIX = "enc:v1:"
+
+
+def secrets_config_problems() -> list[str]:
+    if get_settings().secrets_encryption_key:
+        try:
+            import cryptography  # noqa: F401
+        except ImportError:
+            missing = (
+                "SECRETS_ENCRYPTION_KEY is set but the 'cryptography' package is missing "
+                "(pip install 'contractapi[oidc]')"
+            )
+            return [missing]
+    return []
+
+
+def _aesgcm():  # type: ignore[no-untyped-def]
+    import hashlib
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    key = get_settings().secrets_encryption_key
+    return AESGCM(hashlib.sha256(key.encode("utf-8")).digest())
+
+
+def _encode(value: str) -> str:
+    if not get_settings().secrets_encryption_key:
+        return value
+    import base64
+
+    nonce = os.urandom(12)
+    sealed = _aesgcm().encrypt(nonce, value.encode("utf-8"), b"contractapi-secret")
+    return _ENC_PREFIX + base64.b64encode(nonce + sealed).decode("ascii")
+
+
+def _decode(stored: str) -> str:
+    if not stored.startswith(_ENC_PREFIX):
+        return stored
+    if not get_settings().secrets_encryption_key:
+        raise AppError(
+            type_="https://contractapi.dev/problems/misconfigured",
+            title="Secret store locked",
+            status=500,
+            detail="Stored secrets are encrypted: set SECRETS_ENCRYPTION_KEY to the key used to write them.",
+        )
+    import base64
+
+    from cryptography.exceptions import InvalidTag
+
+    raw = base64.b64decode(stored[len(_ENC_PREFIX) :])
+    try:
+        return _aesgcm().decrypt(raw[:12], raw[12:], b"contractapi-secret").decode("utf-8")
+    except InvalidTag as exc:
+        raise AppError(
+            type_="https://contractapi.dev/problems/misconfigured",
+            title="Secret store locked",
+            status=500,
+            detail="SECRETS_ENCRYPTION_KEY does not match the key the secrets were written with.",
+        ) from exc
+
+
+def _write(path: Path, value: str) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        fh.write(value)
+        fh.write(_encode(value))
     os.chmod(path, 0o600)
+
+
+def put_secret(name: str, value: str) -> str:
+    """Store a secret and return its `${secret:NAME}` reference."""
+    _write(_store_dir() / _check_name(name), value)
     return f"${{secret:{name}}}"
 
 
 def get_secret(name: str) -> str | None:
     path = _store_dir() / _check_name(name)
-    return path.read_text(encoding="utf-8") if path.is_file() else None
+    if not path.is_file():
+        return None
+    stored = path.read_text(encoding="utf-8")
+    value = _decode(stored)
+    if not stored.startswith(_ENC_PREFIX) and get_settings().secrets_encryption_key:
+        _write(path, value)  # migrate plaintext written before encryption was enabled
+    return value
 
 
 def resolve_refs(text: str) -> str:

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
         description="Required on studio routes via X-API-Key (OWASP: protect management plane).",
     )
     cors_origins: str = "http://localhost:3000"
+    secrets_encryption_key: str = Field(
+        default="",
+        description="Encrypt the Studio secret store at rest (AES-256-GCM). Keep it outside SPECS_DIR.",
+    )
     memory_kv_max_entries: int = Field(
         default=10_000,
         ge=100,

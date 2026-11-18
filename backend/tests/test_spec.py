@@ -120,5 +120,5 @@ def test_every_example_spec_loads():
     for path in examples:
         try:
             load_spec(path)
-        except Exception as exc:  # noqa: BLE001 — report which file broke
+        except Exception as exc:
             pytest.fail(f"{path.name}: {exc}")
