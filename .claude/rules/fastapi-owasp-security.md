@@ -1,0 +1,36 @@
+# API security (OWASP API Top 10 · FastAPI)
+
+Apply on every task. Baselines: OWASP API Security Top 10 (2023), RFC 9457, Zalando API guidelines. This tool *generates* APIs for non-experts, so its **defaults and guard rails are the security** — a safe API must be the path of least resistance in the UI.
+
+## Two planes, two auth gates
+
+| Plane | Auth | Where |
+|---|---|---|
+| **Studio control plane** `/studio/*` | `require_studio_api_key` (X-API-Key break-glass, OIDC Bearer, OIDC httpOnly cookie) | `infrastructure/security/auth.py`, router-level `dependencies` |
+| **Data plane** `/data`, `/apis/{name}` | per-spec `AuthMode` (API key / JWT / none-if-explicit) + RBAC + row-level | `data_api_builder.py` |
+
+- Never add a Studio route outside the gated router. Never weaken `require_studio_api_key`.
+- Compare secrets with `hmac.compare_digest` (see `_constant_time_equals`). No `==` on keys/tokens.
+- Public (no-auth) data endpoints must be an **explicit spec choice with a UI warning**, and read-only.
+
+## Controls this product must keep enforcing
+
+- **API3 object-property authz:** field allowlists; `domain/sensitive.py` blocks password/secret/token/key/ssn/card/cvv/salt/hash columns unless `allow_sensitive` is set deliberately. Extend the pattern list rather than bypassing it. Never serialize all columns.
+- **API1/5 object/function authz:** writes need explicit spec opt-in; RBAC (`RolePermissions`) and row-level (`RowLevelConfig`, `row_security.py`) apply to REST **and** GraphQL identically. Row-level write must force the claim value (never trust a client-supplied owner column).
+- **API4 resource consumption:** hard `max_limit`, body-size limit middleware, rate limit (`RateLimitConfig`), bulk and export/job size should be bounded (verify when touching them; `bulk_enabled` is on by default in `EndpointSpec`, so keep a hard cap).
+- **API8 misconfiguration:** `SecurityHeadersMiddleware`, explicit `CORS_ORIGINS` (no `*` with credentials), `X-Trace-Id`/request-id, no debug output. Production checklist: `docs/PRODUCTION.md`, `docs/SECURITY.md`.
+- **Injection:** SQLAlchemy bound params only. Raw SQL endpoints (`sql:`) must pass `_assert_safe_select` (SELECT-only) and use declared `SqlParam`s. Aggregate DSL identifiers go through `_quote_agg_ident`/allowlist; literals through `_literal`. Never interpolate request data into SQL.
+- **Secrets:** `STUDIO_API_KEY`, `DATA_API_KEYS`, `JWT_SECRET`, DB URLs, OIDC client secrets come from env via `core/config.py`. Never commit real values, log them, put them in audit `meta`, error `detail`, or API responses. Stored API keys are hashed (`infrastructure/api_keys.py`).
+- **Tokens:** JWT verified with explicit algorithm/audience/expiry; refresh + revoke via `token_store`. OIDC cookie is httpOnly + Secure(prod) + SameSite.
+- **Webhooks:** HMAC-signed, retry-bounded. **Known gap:** `infrastructure/webhooks.py` does no SSRF check on target URLs — when touching webhooks, add validation (http(s) only, block loopback/link-local/private ranges) rather than expanding the surface as-is.
+- **Idempotency & ETag:** writes honor `Idempotency-Key` / `If-Match` where the spec enables them — don't bypass.
+- **Error hygiene:** Problem Details only; no SQL/stack/paths/connection strings to clients (see `errors-problem-details.md`). Known wart: `database-unreachable` currently echoes `str(exc)` — fix, don't copy.
+
+## Agent checklist before "done"
+
+1. New Studio route is under the gated router; new data-plane behavior is spec-driven and respects auth/RBAC/RLS.
+2. No new way to expose a column, method, or endpoint that the spec didn't opt into.
+3. SQL built only from bound params / allowlisted identifiers.
+4. No secret/PII in logs, audit meta, errors, or responses.
+5. New limit/guard configurable in the spec **and** visible in Studio with a safe default.
+6. A test proves the denial path (401/403/422/429), not just the happy path.

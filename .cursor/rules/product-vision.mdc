@@ -1,0 +1,33 @@
+---
+description: "Product vision (read first)"
+globs:
+alwaysApply: true
+---
+<!-- generated from .claude/rules/product-vision.md by scripts/sync_agent_rules.py; edit the source and re-run -->
+
+# Product vision (read first)
+
+**contractapi** lets data scientists, data engineers and people who struggle with API code build a **complete, standard, secure API from a UI**: connect a database → pick tables/SQL → name the URL → set guards → activate. No hand-written FastAPI.
+
+```
+DB (Postgres/DuckDB/…) ─introspect─► Studio UI / YAML contract ─activate─► FastAPI /data + /apis/{name}
+```
+
+## Principles
+
+1. **UI-first.** Every API-design capability must be reachable from Studio (`apps/web`) *and* expressible in the YAML `ApiSpec`. A feature that exists only in YAML or only in the runtime is unfinished.
+2. **The contract is the product.** The DB is only a source; never expose it by default. Endpoints, fields and methods are opt-in; read-only is the default.
+3. **Secure by default, explainable in the UI.** Safe choice preselected; risky choices (writes, sensitive columns, public access) need an explicit toggle plus a plain-language warning.
+4. **Cover the full API design lifecycle** — a Studio flow should let a non-coder decide each of these:
+   - naming: resource name, URL path, `api_prefix`, versioning, deprecation
+   - shape: field allowlist, aliases, sparse fields, relations/embedding
+   - query: filters, `?q=` search, sort, pagination (cursor/offset), export formats
+   - write: methods, validation rules, bulk, idempotency, soft-delete, ETag/concurrency
+   - security: API key / JWT / OIDC, roles & per-field RBAC, row-level, rate limit, CORS, sensitive-column block
+   - operations: cache, async jobs, webhooks, audit, metrics, OpenAPI/Postman/SDK export, diff between versions
+5. **Audience is non-expert.** UI copy and error messages say what to do next, not how the framework works. Defaults must produce a working API on the first try.
+6. **Honest limits.** Not a multi-org SaaS control plane (see `docs/PRODUCT_GAPS.md`). Don't build toward it.
+
+## When adding a feature
+
+Touch, in order: `domain/models/spec.py` (field + validation) → `application/` (behavior) → `interfaces/http` (route/schema) → Studio UI (control + helper text) → `backend/examples/*.yaml` → tests → `CHANGELOG.md` (+ `docs/UPGRADING.md` if YAML-breaking).

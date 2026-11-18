@@ -1,0 +1,69 @@
+---
+name: smoke-changed-apis
+description: "Smoke-test created/changed contractapi HTTP endpoints (Studio /studio/* and generated /data, /apis/{name}) against a running server before commit. Manual attach only."
+---
+
+# Smoke-Test Changed APIs
+
+Before an API task is done (and before commit), hit every **created or changed** endpoint against a
+**running server**. Unit tests miss wiring, auth dependencies, OpenAPI and runtime crashes.
+
+Do not redesign the feature. Find real HTTP failures, fix product bugs, re-smoke until clean.
+
+## When This Applies
+
+After changing Studio routes (`interfaces/http/studio/*`), the data-plane builder
+(`application/data_api/*`, `sql_endpoint.py`, `graphql_*`), middleware, auth, or the Next BFF
+(`apps/web/src/app/api/*`).
+
+## Workflow
+
+1. From `git diff`, list affected routes (method + path). Studio routes live under `/studio`;
+   generated endpoints under `/data/<prefix>/<path>` (primary) and `/apis/<name>/...`.
+2. Start the stack: `docker compose up -d --build` (API :8000, Studio :3000) or
+   `contractapi serve` + `npm run dev`. If it cannot start, stop and report — do not skip smoke.
+3. Send **real HTTP** requests with `curl`. Auth: Studio `X-API-Key: $STUDIO_API_KEY`; data plane
+   per spec (`X-API-Key` data key, or a test JWT from `POST /studio/token`).
+4. Failures to fix:
+   - HTTP `500`, or any body that is not `application/json` / `application/problem+json`
+   - a Problem Details body that leaks SQL, stack traces, file paths or credentials
+   - a success shape that does not match OpenAPI (`/data/openapi.json`)
+5. Re-run the same requests after each fix until responses are clean.
+
+## Minimum Smoke Matrix
+
+For each changed endpoint:
+
+- **Happy path** → expected status + JSON
+- **Unauthenticated** → `401` Problem Details (never `200`, never `500`)
+- **Invalid input** (bad body, bad filter value like `?id__gt=abc`) → `400`/`422`, not `500`
+
+Add when relevant: `403` (role / RBAC / row-level), `404`, `409` (constraint, idempotency in
+progress), `412` (If-Match), `413` (body limit), `429` (rate limit).
+
+### Extra smokes for contractapi
+
+- **RBAC:** a role without a field must not see it in GET *or* write responses, and cannot filter/sort on it.
+- **Row-level:** a token for tenant A never sees or changes tenant B rows (REST and `/graphql`).
+- **Studio BFF:** signed-out `/api/studio/*` → 401; cross-site POST (foreign `Origin`) → 403.
+- **Secrets:** saved spec YAML and Studio responses never contain a literal DB password.
+
+## How to Call
+
+```bash
+curl -sS -D - "http://127.0.0.1:8000/data/customers?limit=2" -H "X-API-Key: $DATA_API_KEY"
+curl -sS -D - -X POST "http://127.0.0.1:8000/studio/validate" \
+  -H "X-API-Key: $STUDIO_API_KEY" -H "Content-Type: application/json" -d '{"spec": {...}}'
+```
+
+## Failure Loop
+
+1. Read status, body and the API log (`docker compose logs api`).
+2. Fix the root cause (service/route/schema) — never weaken the check.
+3. Re-run the same requests until all pass.
+
+Do not commit unless the user asked.
+
+## Final Report
+
+Endpoints smoked, auth used, statuses observed, bugs found and files fixed, blockers.

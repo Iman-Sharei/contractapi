@@ -1,0 +1,24 @@
+# API design standards (what generated APIs must look like)
+
+These are the standards the **generated** API follows and that Studio steers users toward. When adding a spec option, make the standard choice the default.
+
+## REST
+
+- Plural-noun, lowercase, hyphenated resource paths (`/customers`, `/order-items`); nesting at most one level; no verbs in paths. Default `api_prefix` is empty; users may set `/v1`-style prefixes. Studio shows the final URL live while the user names things.
+- Methods: GET (safe, idempotent), POST create (201; `Location` header is a known gap, add when touching create), PUT replace (idempotent), PATCH partial, DELETE (204). Writes opt-in per endpoint.
+- Status codes: 2xx success, 4xx client, 5xx server; errors are RFC 9457 (`application/problem+json`).
+- Collections: always paginated (hard max), cursor for large data, deterministic sort with a tiebreaker (PK), `Link` headers, optional `include_total`.
+- Filtering: `field__op` (soft alias `field_op`), `?q=` search, sparse fieldsets `?fields=`, relation embedding `?include=`. Only allowlisted fields are filterable/sortable.
+- Conditional & safe retries: `ETag`/`If-Match`, `Idempotency-Key` on POST.
+- Evolution: `DeprecationConfig` (Sunset/Deprecation headers), `contractapi diff --fail-on-breaking` before promote. Additive changes preferred; removals need a deprecation cycle (`docs/STABILITY.md`).
+- Observability: `X-Trace-Id`, Prometheus `/metrics`, audit log.
+- Output formats: JSON default; CSV/NDJSON/Parquet only when the spec enables them.
+
+## GraphQL facade (`/graphql`, optional)
+
+Mirror REST authz exactly: same field allowlists, RBAC `roles`, row-level `claims`. Bounded depth/page size; mutations only for methods the REST spec allows. No GraphQL-only data exposure.
+
+## Naming & copy
+
+- Spec/endpoint `name`: `snake_case`, unique, stable (it's an identity in `/apis/{name}` and OpenAPI `operationId`s).
+- Studio helper text is plain-language and action-oriented (what it does, why it's safe/unsafe), not framework jargon.

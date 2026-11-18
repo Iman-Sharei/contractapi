@@ -1,0 +1,28 @@
+# Testing & verification
+
+| Area | Command | Notes |
+|---|---|---|
+| Backend | `cd backend && pytest -q` | tests in `backend/tests/` (`test_spec`, `test_security`, `test_studio_api`, `test_e2e_postgres`, `test_graphql_ga`, …) |
+| Lint | `cd backend && ruff check .` | line length 100, py310 target |
+| Web unit | `cd apps/web && npm test` | vitest, `src/lib/*.test.ts` |
+| Web types/lint | `npm run typecheck && npm run lint` | |
+| Web e2e | `npm run test:e2e` | Playwright; uses Compose DB host `db` |
+| Deploy matrix | `scripts/deploy_scenario_matrix.sh` | after Docker/compose changes |
+
+## What to test
+
+- **Spec/domain change** → unit test in `test_spec.py` (valid + invalid specs; the message must be actionable).
+- **New runtime behavior** → HTTP-level test via `fastapi.testclient`/`httpx` against `create_data_app(...)`; include the **denial paths** (401/403/422/429) and that sensitive/non-allowlisted fields never appear.
+- **New Studio route** → `test_studio_api.py`: auth required (401 without key), happy path, validation error shape (Problem Details).
+- **New spec option** → example YAML in `backend/examples/` validates (`contractapi validate`) and round-trips through `dump_spec`.
+- **Studio form ⇄ YAML logic** → vitest in `lib/`.
+- Optional-extra features: skip cleanly (`pytest.importorskip`) when the extra isn't installed.
+- Bug fix: write the failing test first, fix the shared function once, not each caller.
+
+## Done means
+
+Tests for the change pass, `ruff` is clean, no secrets added, `CHANGELOG.md` updated for user-visible changes, and (for any new capability) it is reachable from the Studio UI.
+
+## Staging/test-friendly defaults
+
+For a flow blocked only by a missing **non-critical auxiliary value** (e.g. a missing display label or optional metadata), use an explicit named default in `application/` (not in routers/schemas) and test it. Never for auth, permissions, ownership, row-level scope, secrets or sensitive-column decisions — those must fail closed.
