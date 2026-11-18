@@ -156,9 +156,12 @@ def _restore_runtime() -> None:
         saved = load_active()
         if saved and saved.get("specs"):
             primary = saved.get("primary")
+            from contractapi.infrastructure.secrets import secure_spec_payload
+
             for name, raw in saved["specs"].items():
                 try:
-                    spec = parse_spec(raw)
+                    # Migrates runtime state written before the secret store existed.
+                    spec = parse_spec(secure_spec_payload(raw, name))
                     spec_store.set(spec, name=name, primary=False)
                 except Exception as exc:  # noqa: BLE001
                     from contractapi.core.logging import get_logger

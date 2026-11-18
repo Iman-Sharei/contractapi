@@ -302,3 +302,26 @@ def test_data_handlers_are_sync_and_engines_shared(pg):
     assert not any(inspect.iscoroutinefunction(r.endpoint) for r in data_routes)
     cfg = DatabaseConfig(url=PG)
     assert create_engine_for_config(cfg) is create_engine_for_config(cfg)
+
+
+def test_boot_restore_moves_literal_passwords_out_of_runtime_state(tmp_path, monkeypatch):
+    import json
+
+    from contractapi.application.studio_service import spec_store
+    from contractapi.infrastructure.runtime_store import active_path, save_active
+    from contractapi.interfaces.http.app_factory import _restore_runtime
+
+    monkeypatch.setenv("BOOT_SPEC", "")
+    get_settings.cache_clear()
+    raw = {
+        "database": {"url": "postgresql://app:old-pass@db:5432/app"},
+        "endpoints": [{"name": "x", "path": "/x", "table": "t", "fields": ["id"]}],
+    }
+    save_active("legacy", {"legacy": raw})
+    try:
+        _restore_runtime()
+        persisted = active_path().read_text()
+        assert "old-pass" not in persisted
+        assert "${secret:db-legacy}" in json.loads(persisted)["specs"]["legacy"]["database"]["url"]
+    finally:
+        spec_store.clear()
