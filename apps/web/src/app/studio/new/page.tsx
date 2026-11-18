@@ -11,6 +11,7 @@ import {
 import { defaultSafeColumns, ensurePrimaryKey, formatApiPath } from "@/lib/pickColumns";
 import { tableKey } from "@/lib/tableKey";
 import { defaultPath } from "@/lib/pathRules";
+import { SafetyChecklist } from "@/components/studio/SafetyChecklist";
 import type { ApiSpecDraft, EndpointDraft, TableInfo } from "@/lib/types";
 import { ALL_FILTER_OPS } from "@/lib/types";
 import styles from "@/components/studio/flow.module.css";
@@ -484,6 +485,7 @@ ${draft.endpoints
   )
   .join("\n")}`}
           </pre>
+          <SafetyChecklist spec={draft} />
           <div className={styles.toolbar}>
             <button type="button" className={styles.ghost} onClick={() => setStep(1)}>
               Back

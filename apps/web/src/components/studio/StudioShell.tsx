@@ -21,6 +21,7 @@ import { copyText } from "@/lib/copy";
 import { defaultSafeColumns } from "@/lib/pickColumns";
 import { tableKey } from "@/lib/tableKey";
 import { pathError } from "@/lib/pathRules";
+import { SafetyChecklist } from "./SafetyChecklist";
 import type {
   ApiSpecDraft,
   DatabaseDriver,
@@ -1581,6 +1582,7 @@ export function StudioShell({
 
               {editorTab === "security" && (
                 <div className={styles.editorBlock}>
+                  <SafetyChecklist spec={spec} />
                   <h3>Endpoint access</h3>
                   <label>
                     Required roles (comma-separated)

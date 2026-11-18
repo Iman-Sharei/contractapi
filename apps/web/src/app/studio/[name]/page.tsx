@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { StudioShell } from "@/components/studio/StudioShell";
+import { UseYourApi } from "@/components/studio/UseYourApi";
 import {
   activateSpec,
   deactivateSpec,
@@ -24,6 +25,7 @@ export default function ApiDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [liveTick, setLiveTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +67,7 @@ export default function ApiDetailPage() {
         const loaded = await loadSpec(name);
         await activateSpec(loaded.spec, name);
         setIsLive(true);
+        setLiveTick((t) => t + 1);
         setOk(`Activated → ${getApiBase()}/data/docs`);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Activate failed");
@@ -77,6 +80,7 @@ export default function ApiDetailPage() {
       try {
         await deactivateSpec();
         setIsLive(false);
+        setLiveTick((t) => t + 1);
         setOk("Deactivated.");
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Deactivate failed");
@@ -161,6 +165,8 @@ export default function ApiDetailPage() {
           </button>
         </div>
       )}
+
+      <UseYourApi name={name} refreshKey={liveTick} />
 
       <div className={styles.wideShell}>
         <StudioShell initialName={name} embedded />
