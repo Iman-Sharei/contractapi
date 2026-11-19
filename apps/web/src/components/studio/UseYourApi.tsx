@@ -79,7 +79,7 @@ export function UseYourApi({ name, refreshKey = 0 }: { name: string; refreshKey?
     <section className={styles.panel} data-testid="use-your-api" aria-labelledby="use-your-api-title">
       <h2 id="use-your-api-title">Use your API</h2>
       {!live ? (
-        <p className={styles.hint}>Activate this API to get a live URL and ready-to-run code.</p>
+        <p className={styles.hint}>Make this API live to get its address and ready-to-run code.</p>
       ) : (
         <>
           {spec.endpoints.length > 1 && (

@@ -18,10 +18,10 @@ export function EndpointsPanel({ s }: { s: EditorState }) {
         <h2>Endpoints</h2>
         <div className={styles.rowGap}>
           <button type="button" className={styles.secondary} onClick={onValidate} disabled={pending}>
-            Validate
+            Check for problems
           </button>
           <button type="button" className={styles.primary} onClick={onActivate} disabled={pending}>
-            Activate
+            Save &amp; make live
           </button>
         </div>
       </div>

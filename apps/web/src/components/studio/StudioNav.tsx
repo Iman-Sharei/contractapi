@@ -2,14 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { getApiBase } from "@/lib/api";
 import styles from "./flow.module.css";
 
+const SECTIONS = ["new", "diff", "ops", "tools"];
+
 const links = [
-  { href: "/studio", label: "My APIs", match: (p: string) => p === "/studio" || /^\/studio\/[^/]+$/.test(p) },
-  { href: "/studio/new", label: "New", match: (p: string) => p.startsWith("/studio/new") },
-  { href: "/studio/diff", label: "Diff", match: (p: string) => p.startsWith("/studio/diff") },
-  { href: "/studio/ops", label: "Ops", match: (p: string) => p.startsWith("/studio/ops") },
+  {
+    href: "/studio",
+    label: "My APIs",
+    // An API page (/studio/<name>) belongs to "My APIs" — but not the other sections.
+    match: (p: string) =>
+      p === "/studio" || (/^\/studio\/[^/]+$/.test(p) && !SECTIONS.includes(p.split("/")[2])),
+  },
+  { href: "/studio/new", label: "New API", match: (p: string) => p.startsWith("/studio/new") },
+  { href: "/studio/diff", label: "Compare", match: (p: string) => p.startsWith("/studio/diff") },
+  { href: "/studio/ops", label: "Keys & settings", match: (p: string) => p.startsWith("/studio/ops") },
   { href: "/studio/tools", label: "Tools", match: (p: string) => p.startsWith("/studio/tools") },
 ];
 
@@ -38,14 +45,6 @@ export function StudioNav() {
           );
         })}
       </nav>
-      <a
-        className={styles.docs}
-        href={`${getApiBase()}/data/docs`}
-        target="_blank"
-        rel="noreferrer"
-      >
-        Live docs <span className={styles.srOnly}>(opens in new tab)</span>
-      </a>
       <button
         type="button"
         className={styles.ghost}

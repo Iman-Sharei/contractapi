@@ -16,6 +16,20 @@
   display: flex;
   gap: 6px;
   flex: 1;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .nav {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .navLinks {
+    order: 3;
+    flex-basis: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
 }
 
 .navOn,
@@ -24,6 +38,7 @@
   border-radius: 999px;
   font-size: 0.9rem;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .navOn {
@@ -226,14 +241,10 @@
   background: #fff;
 }
 
+/* Wider than the page column but centred on the viewport — never wider than the window. */
 .wideShell {
-  max-width: none;
-  width: 100%;
-  margin-left: calc(50% - 50vw + 20px);
-  margin-right: calc(50% - 50vw + 20px);
   width: min(1400px, calc(100vw - 40px));
-  margin-left: auto;
-  margin-right: auto;
+  margin-left: calc(50% - min(700px, 50vw - 20px));
 }
 
 .revealBox {
@@ -713,4 +724,52 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Native checkboxes keep their natural size inside form grids. */
+.formGrid input[type="checkbox"],
+.field input[type="checkbox"],
+.checkField input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+  padding: 0;
+}
+
+.warnBox {
+  border: 1px solid #f0c36d;
+  background: #fff8e6;
+  color: #6b4a00;
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+/* Collapsible "advanced settings" blocks. */
+.advanced {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 0.4rem 0.9rem;
+  margin-top: 10px;
+}
+
+.advanced > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.4rem 0;
+}
+
+.advanced[open] > summary {
+  margin-bottom: 8px;
+}
+
+ul.chipRow {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+
+.chipMeta {
+  opacity: 0.85;
+  font-weight: 400;
 }

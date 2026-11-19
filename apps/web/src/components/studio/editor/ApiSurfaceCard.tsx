@@ -8,7 +8,7 @@ export function ApiSurfaceCard({ s }: { s: EditorState }) {
   return (
     <section className={styles.settingsCard}>
       <div className={styles.settingsHead}>
-        <h2>API surface</h2>
+        <h2>About this API</h2>
       </div>
       <div className={styles.fieldGrid}>
         <label className={styles.span2}>
@@ -28,6 +28,8 @@ export function ApiSurfaceCard({ s }: { s: EditorState }) {
         </label>
       </div>
 
+      <details className={styles.advanced}>
+        <summary>Advanced: speed, limits and safety switches</summary>
       <div className={styles.toggleRow}>
         <label className={styles.toggle}>
           <input
@@ -168,6 +170,7 @@ export function ApiSurfaceCard({ s }: { s: EditorState }) {
           />
         </label>
       </div>
+      </details>
     </section>
   );
 }

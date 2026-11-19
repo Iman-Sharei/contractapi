@@ -1,22 +1,20 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
-import {
-  activateSpec,
-  introspectDatabase,
-  saveSpec,
-  validateSpec,
-} from "@/lib/api";
-import { defaultSafeColumns, ensurePrimaryKey, formatApiPath } from "@/lib/pickColumns";
-import { tableKey } from "@/lib/tableKey";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { activateSpec, introspectDatabase, listSpecs, saveSpec, validateSpec } from "@/lib/api";
+import { ConnectStep } from "@/components/studio/wizard/ConnectStep";
+import { PickStep } from "@/components/studio/wizard/PickStep";
+import { PublishStep } from "@/components/studio/wizard/PublishStep";
+import { DEMO_PG, buildPgUrl, missingPgFields, parsePgUrl, type PgFields } from "@/lib/dbUrl";
+import { DEFAULT_API_VERSION, WRITE_METHODS } from "@/lib/labels";
 import { defaultPath } from "@/lib/pathRules";
-import { SafetyChecklist } from "@/components/studio/SafetyChecklist";
+import { defaultSafeColumns, ensurePrimaryKey } from "@/lib/pickColumns";
+import { tableKey } from "@/lib/tableKey";
 import type { ApiSpecDraft, EndpointDraft, TableInfo } from "@/lib/types";
 import { ALL_FILTER_OPS } from "@/lib/types";
 import styles from "@/components/studio/flow.module.css";
 
-const STEPS = ["Connect", "Pick", "Guards"] as const;
+const STEPS = ["Connect", "Choose data", "Protect & publish"] as const;
 
 function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "resource";
@@ -31,24 +29,45 @@ function uniqueEndpointName(base: string, used: Set<string>): string {
 }
 
 export default function NewApiWizardPage() {
-  const router = useRouter();
   const [step, setStep] = useState(0);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const [specName, setSpecName] = useState("my_api");
-  const [dbUrl, setDbUrl] = useState("postgresql://postgres:postgres@db:5432/app");
-  const [showPass, setShowPass] = useState(false);
+  const [apiName, setApiName] = useState("my_api");
+  const [existingNames, setExistingNames] = useState<string[]>([]);
+  const [fields, setFields] = useState<PgFields>(DEMO_PG);
+  const [useUrl, setUseUrl] = useState(false);
+  const [pastedUrl, setPastedUrl] = useState("");
   const [schema, setSchema] = useState("public");
   const [tables, setTables] = useState<TableInfo[]>([]);
   /** tableKey → selected column names */
   const [pickedColumns, setPickedColumns] = useState<Record<string, string[]>>({});
   const [expanded, setExpanded] = useState<string | null>(null);
   const [auth, setAuth] = useState<ApiSpecDraft["app"]["auth"]>("api_key");
-  const [readOnly, setReadOnly] = useState(true);
+  const [allowWrites, setAllowWrites] = useState(false);
   const [title, setTitle] = useState("My Data API");
   const [apiPrefix, setApiPrefix] = useState("");
+
+  useEffect(() => {
+    listSpecs()
+      .then((r) => {
+        const names = r.specs.map((s) => s.name);
+        setExistingNames(names);
+        // Suggest a free default name instead of silently reusing an existing one.
+        if (names.includes("my_api")) {
+          let i = 2;
+          while (names.includes(`my_api_${i}`)) i++;
+          setApiName(`my_api_${i}`);
+        }
+      })
+      .catch(() => setExistingNames([]));
+  }, []);
+
+  const slug = slugify(apiName);
+  const nameTaken = existingNames.includes(slug);
+  const dbUrl = useUrl ? pastedUrl : buildPgUrl(fields);
+  const prefix = apiPrefix.trim() ? `/${apiPrefix.trim().replace(/^\/+|\/+$/g, "")}` : "";
 
   const pickedKeys = useMemo(
     () => Object.keys(pickedColumns).filter((k) => (pickedColumns[k]?.length ?? 0) > 0),
@@ -63,36 +82,36 @@ export default function NewApiWizardPage() {
       if (!table) continue;
       const name = uniqueEndpointName(table.name, used);
       const pk = table.primary_keys[0] ?? table.columns.find((c) => !c.sensitive)?.name ?? "id";
-      const fields = ensurePrimaryKey(pickedColumns[key] ?? [], table);
-      if (fields.length === 0) continue;
+      const fieldsPicked = ensurePrimaryKey(pickedColumns[key] ?? [], table);
+      if (fieldsPicked.length === 0) continue;
       endpoints.push({
         name,
-        path: defaultPath(name, apiPrefix),
+        path: defaultPath(name, prefix),
         table: table.name,
         schema: table.schema,
-        methods: ["GET"],
+        methods: allowWrites ? ["GET", ...WRITE_METHODS] : ["GET"],
         primary_key: pk,
-        fields,
-        writable_fields: fields.filter((f) => f !== pk),
-        filters: fields.filter((f) => f !== pk).slice(0, 3),
+        fields: fieldsPicked,
+        writable_fields: fieldsPicked.filter((f) => f !== pk),
+        filters: fieldsPicked.filter((f) => f !== pk).slice(0, 3),
         filter_operators: [...ALL_FILTER_OPS],
         sortable: [pk],
         pagination: { enabled: true, mode: "cursor", default_limit: 20, max_limit: 100 },
         csv_export: true,
         ndjson_export: true,
-        parquet_export: true,
-        description: `Generated from ${table.kind ?? "table"} ${table.schema}.${table.name}`,
+        parquet_export: false,
+        description: `Rows from ${table.name}`,
       });
     }
     return {
       database: { url: dbUrl, driver: "postgres" },
       app: {
         title,
-        version: "0.5.0",
-        description: "Created with contractapi Studio wizard",
-        read_only: readOnly,
+        version: DEFAULT_API_VERSION,
+        description: "Created with the contractapi Studio wizard",
+        read_only: !allowWrites,
         auth,
-        api_prefix: apiPrefix,
+        api_prefix: prefix,
         cache: { enabled: true, ttl_seconds: 30 },
         idempotency: { enabled: true, required_for_writes: false, ttl_seconds: 86400 },
         rate_limit: { enabled: true, requests_per_minute: 120 },
@@ -111,43 +130,63 @@ export default function NewApiWizardPage() {
       },
       endpoints,
     };
-  }, [pickedKeys, pickedColumns, tables, dbUrl, title, readOnly, auth, apiPrefix]);
+  }, [pickedKeys, pickedColumns, tables, dbUrl, title, allowWrites, auth, prefix]);
 
   function goStep(i: number) {
     if (i > 0 && tables.length === 0) {
-      setError("Connect and introspect the database first.");
+      setError("Connect to your database first.");
       return;
     }
     if (i > 1 && pickedKeys.length === 0) {
-      setError("Pick at least one table and one column.");
+      setError("Pick at least one table.");
       return;
     }
     setError(null);
     setStep(i);
   }
 
-  function onIntrospect() {
+  function onConnect() {
     setError(null);
-    if (!dbUrl.trim()) {
-      setError("Database URL is required.");
-      return;
+    if (useUrl) {
+      if (!parsePgUrl(pastedUrl)) {
+        setError("That doesn't look like a Postgres URL (postgresql://user:password@host:5432/db).");
+        return;
+      }
+    } else {
+      const missing = missingPgFields(fields);
+      if (missing.length) {
+        setError(`Please fill in the ${missing.join(", ")}.`);
+        return;
+      }
     }
     startTransition(async () => {
       try {
         const result = await introspectDatabase(dbUrl, schema);
         setTables(result.tables);
         const next: Record<string, string[]> = {};
-        for (const t of result.tables) {
-          next[tableKey(t)] = defaultSafeColumns(t);
-        }
+        for (const t of result.tables) next[tableKey(t)] = defaultSafeColumns(t);
         setPickedColumns(next);
         setExpanded(result.tables[0] ? tableKey(result.tables[0]) : null);
-        setMessage(`Found ${result.count} tables/views — choose columns to expose.`);
+        setMessage(
+          result.count
+            ? `Connected — found ${result.count} table${result.count === 1 ? "" : "s"}.`
+            : "Connected, but this schema has no tables.",
+        );
         setStep(1);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Introspect failed");
+        setError(e instanceof Error ? e.message : "Could not connect to the database.");
       }
     });
+  }
+
+  function setUseUrlMode(next: boolean) {
+    // Carry what the user already typed across the two input styles.
+    if (next) setPastedUrl(buildPgUrl(fields));
+    else {
+      const parsed = parsePgUrl(pastedUrl);
+      if (parsed) setFields(parsed);
+    }
+    setUseUrl(next);
   }
 
   function toggleTable(key: string, table: TableInfo) {
@@ -167,8 +206,7 @@ export default function NewApiWizardPage() {
     setPickedColumns((prev) => {
       const cur = prev[key] ?? [];
       if (cur.includes(col)) {
-        if (col === pk && cur.length <= 1) return prev;
-        if (col === pk) return { ...prev, [key]: cur.filter((c) => c !== col) };
+        if (col === pk) return prev; // the unique id is always part of the API
         const next = cur.filter((c) => c !== col);
         if (next.length === 0) {
           const rest = { ...prev };
@@ -182,39 +220,36 @@ export default function NewApiWizardPage() {
   }
 
   function selectAllColumns(key: string, table: TableInfo, safeOnly: boolean) {
-    const cols = table.columns
-      .filter((c) => (safeOnly ? !c.sensitive : true))
-      .map((c) => c.name);
-    setPickedColumns((prev) => ({
-      ...prev,
-      [key]: ensurePrimaryKey(cols, table),
-    }));
+    const cols = table.columns.filter((c) => (safeOnly ? !c.sensitive : true)).map((c) => c.name);
+    setPickedColumns((prev) => ({ ...prev, [key]: ensurePrimaryKey(cols, table) }));
   }
 
-  function onPublish(activate: boolean) {
+  function onPublish(live: boolean) {
     setError(null);
-    if (!slugify(specName)) {
-      setError("Spec name is required.");
+    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(slug)) {
+      setError("The API name must start with a letter and use only lowercase letters, digits and _.");
       return;
     }
     if (draft.endpoints.length === 0) {
-      setError("Add at least one endpoint before publishing.");
+      setError("Pick at least one table before publishing.");
+      return;
+    }
+    if (nameTaken && !window.confirm(`Replace the existing API '${slug}'? Its current version stays in history.`)) {
       return;
     }
     startTransition(async () => {
       try {
         const check = await validateSpec(draft, true);
         if (!check.valid) {
-          setError(check.errors.join("; "));
+          setError(check.errors.join(" "));
           return;
         }
-        const name = slugify(specName);
-        await saveSpec(name, draft);
-        if (activate) await activateSpec(draft, name);
-        setMessage(activate ? `Saved & activated '${name}'.` : `Saved '${name}'.`);
-        router.push(`/studio/${encodeURIComponent(name)}`);
+        await saveSpec(slug, draft);
+        if (live) await activateSpec(draft, slug);
+        // Full navigation: the API page loads fresh state (and shows the success banner).
+        window.location.assign(`/studio/${encodeURIComponent(slug)}${live ? "?published=1" : "?saved=1"}`);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Publish failed");
+        setError(e instanceof Error ? e.message : "Publishing failed.");
       }
     });
   }
@@ -222,11 +257,9 @@ export default function NewApiWizardPage() {
   return (
     <>
       <section className={styles.heroBlock}>
-        <p className={styles.kicker}>Design flow</p>
-        <h1 className={styles.title}>New API</h1>
-        <p className={styles.lede}>
-          Three steps: connect → pick tables &amp; columns → guards &amp; publish.
-        </p>
+        <p className={styles.kicker}>New API</p>
+        <h1 className={styles.title}>Create an API from your database</h1>
+        <p className={styles.lede}>Three steps, no code: connect, choose data, protect &amp; publish.</p>
       </section>
 
       <div className={styles.steps} role="tablist" aria-label="Wizard steps">
@@ -251,264 +284,53 @@ export default function NewApiWizardPage() {
       )}
 
       {step === 0 && (
-        <section className={styles.panel}>
-          <h2>Connect Postgres</h2>
-          <p>
-            Studio only introspects what you point at. Nothing is exposed yet. For DuckDB warehouses,
-            finish this wizard or open the editor and switch Driver → DuckDB.
-          </p>
-          <div className={styles.formGrid}>
-            <label className={styles.span2}>
-              Database URL
-              <div className={styles.passwordRow}>
-                <input
-                  data-testid="wizard-db-url"
-                  type={showPass ? "text" : "password"}
-                  value={dbUrl}
-                  onChange={(e) => setDbUrl(e.target.value)}
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-                <button
-                  type="button"
-                  className={styles.ghost}
-                  data-testid="wizard-db-url-toggle"
-                  onClick={() => setShowPass((v) => !v)}
-                >
-                  {showPass ? "Hide" : "Show"}
-                </button>
-              </div>
-              <span className={styles.hint}>
-                Docker Compose: use host <code>db</code> and port <code>5432</code> (e.g.{" "}
-                <code>…@db:5432/app</code>). From your laptop outside Docker use{" "}
-                <code>localhost:5433</code>.
-              </span>
-            </label>
-            <label>
-              Postgres schema (usually public)
-              <input value={schema} onChange={(e) => setSchema(e.target.value)} />
-              <span className={styles.hint}>
-                Schema namespace for tables — not “public API”. Default is <code>public</code>.
-              </span>
-            </label>
-            <label>
-              Spec file name
-              <input
-                data-testid="wizard-spec-name"
-                value={specName}
-                onChange={(e) => setSpecName(e.target.value)}
-              />
-            </label>
-          </div>
-          <div className={styles.toolbar}>
-            <button
-              type="button"
-              className={styles.primary}
-              data-testid="wizard-introspect"
-              onClick={onIntrospect}
-              disabled={pending}
-            >
-              Introspect &amp; continue
-            </button>
-          </div>
-        </section>
+        <ConnectStep
+          fields={fields}
+          setField={(k, v) => setFields((f) => ({ ...f, [k]: v }))}
+          useUrl={useUrl}
+          setUseUrl={setUseUrlMode}
+          dbUrl={pastedUrl}
+          setDbUrl={setPastedUrl}
+          schema={schema}
+          setSchema={setSchema}
+          apiName={apiName}
+          setApiName={setApiName}
+          nameTaken={nameTaken}
+          pending={pending}
+          onConnect={onConnect}
+        />
       )}
-
       {step === 1 && (
-        <section className={styles.panel} data-testid="wizard-pick">
-          <h2>Pick tables &amp; columns</h2>
-          <p>
-            Expand a table to choose which columns become API fields. Sensitive columns stay off
-            unless you enable them later in the editor.
-          </p>
-          <div className={styles.sourceList}>
-            {tables.map((t) => {
-              const key = tableKey(t);
-              const selected = pickedColumns[key] ?? [];
-              const on = selected.length > 0;
-              const open = expanded === key;
-              return (
-                <div key={key} className={styles.sourceCard}>
-                  <div className={styles.sourceRow}>
-                    <button
-                      type="button"
-                      className={styles.sourceExpand}
-                      aria-expanded={open}
-                      onClick={() => setExpanded(open ? null : key)}
-                    >
-                      <span aria-hidden>{open ? "▾" : "▸"}</span>
-                      <strong>
-                        {t.schema}.{t.name}
-                      </strong>
-                      <span className={styles.sourceMeta}>
-                        {t.kind ?? "table"} · {selected.length}/{t.columns.length} cols
-                      </span>
-                    </button>
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      onChange={() => toggleTable(key, t)}
-                      aria-label={`Include ${t.schema}.${t.name}`}
-                    />
-                  </div>
-                  {open && (
-                    <div className={styles.columnPicker}>
-                      <div className={styles.columnToolbar}>
-                        <button
-                          type="button"
-                          className={styles.ghost}
-                          onClick={() => selectAllColumns(key, t, true)}
-                        >
-                          Safe only
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.ghost}
-                          onClick={() => selectAllColumns(key, t, false)}
-                        >
-                          Select all
-                        </button>
-                      </div>
-                      <ul className={styles.columnList}>
-                        {t.columns.map((c) => {
-                          const checked = selected.includes(c.name);
-                          const isPk = t.primary_keys.includes(c.name);
-                          return (
-                            <li key={c.name}>
-                              <label
-                                className={
-                                  c.sensitive ? styles.columnRowSensitive : styles.columnRow
-                                }
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  disabled={c.sensitive && !checked}
-                                  onChange={() => {
-                                    if (c.sensitive && !checked) return;
-                                    toggleColumn(key, t, c.name);
-                                  }}
-                                />
-                                <span>
-                                  {c.name}
-                                  {isPk ? " · pk" : ""}
-                                  {c.sensitive ? " · sensitive" : ""}
-                                </span>
-                                <em>{c.type}</em>
-                              </label>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {tables.length === 0 && <p>No tables loaded — go back to Connect.</p>}
-          </div>
-          <div className={styles.toolbar}>
-            <button type="button" className={styles.ghost} onClick={() => setStep(0)}>
-              Back
-            </button>
-            <button
-              type="button"
-              className={styles.primary}
-              data-testid="wizard-pick-continue"
-              disabled={pickedKeys.length === 0}
-              onClick={() => goStep(2)}
-            >
-              Continue
-            </button>
-          </div>
-        </section>
+        <PickStep
+          tables={tables}
+          pickedColumns={pickedColumns}
+          expanded={expanded}
+          setExpanded={setExpanded}
+          toggleTable={toggleTable}
+          toggleColumn={toggleColumn}
+          selectAllColumns={selectAllColumns}
+          canContinue={pickedKeys.length > 0}
+          onBack={() => setStep(0)}
+          onContinue={() => goStep(2)}
+        />
       )}
-
       {step === 2 && (
-        <section className={styles.panel} data-testid="wizard-guards">
-          <h2>Guards &amp; publish</h2>
-          <p>Defaults favor read-only + API key. Leave prefix empty for URLs without a version.</p>
-          <div className={styles.formGrid}>
-            <label>
-              API title
-              <input value={title} onChange={(e) => setTitle(e.target.value)} />
-            </label>
-            <label>
-              API prefix
-              <input
-                value={apiPrefix}
-                onChange={(e) => setApiPrefix(e.target.value)}
-                placeholder="(empty = no version)"
-                spellCheck={false}
-              />
-              <span className={styles.hint}>Empty = paths like <code>/customers</code>, not <code>/v1/…</code></span>
-            </label>
-            <label>
-              Auth
-              <select
-                value={auth}
-                onChange={(e) => setAuth(e.target.value as ApiSpecDraft["app"]["auth"])}
-              >
-                <option value="api_key">API key</option>
-                <option value="jwt">JWT + RBAC</option>
-                <option value="none">None (dev)</option>
-              </select>
-            </label>
-            <label className={styles.checkField}>
-              <input
-                type="checkbox"
-                checked={readOnly}
-                onChange={(e) => setReadOnly(e.target.checked)}
-              />
-              Read-only API
-            </label>
-          </div>
-          <div className={styles.chipRow}>
-            {draft.endpoints.map((ep) => (
-              <span key={ep.name} className={styles.chipOn}>
-                GET {formatApiPath(apiPrefix, ep.path)}
-                <span className={styles.sourceMeta}> · {ep.fields.length} fields</span>
-              </span>
-            ))}
-          </div>
-          <pre className={styles.review}>
-            {`name: ${slugify(specName)}
-title: ${title}
-prefix: ${apiPrefix || "(none)"}
-auth: ${auth}
-read_only: ${readOnly}
-endpoints: ${draft.endpoints.length}
-${draft.endpoints
-  .map(
-    (e) =>
-      `  - GET ${formatApiPath(apiPrefix, e.path)} ← ${e.schema}.${e.table} [${e.fields.join(", ")}]`,
-  )
-  .join("\n")}`}
-          </pre>
-          <SafetyChecklist spec={draft} />
-          <div className={styles.toolbar}>
-            <button type="button" className={styles.ghost} onClick={() => setStep(1)}>
-              Back
-            </button>
-            <button
-              type="button"
-              className={styles.secondary}
-              onClick={() => onPublish(false)}
-              disabled={pending}
-            >
-              Save only
-            </button>
-            <button
-              type="button"
-              className={styles.primary}
-              data-testid="wizard-save-activate"
-              onClick={() => onPublish(true)}
-              disabled={pending}
-            >
-              Save &amp; activate
-            </button>
-          </div>
-        </section>
+        <PublishStep
+          draft={draft}
+          title={title}
+          setTitle={setTitle}
+          prefix={apiPrefix}
+          setPrefix={setApiPrefix}
+          auth={auth}
+          setAuth={setAuth}
+          allowWrites={allowWrites}
+          setAllowWrites={setAllowWrites}
+          apiName={slug}
+          nameTaken={nameTaken}
+          pending={pending}
+          onBack={() => setStep(1)}
+          onPublish={onPublish}
+        />
       )}
     </>
   );

@@ -13,7 +13,7 @@ export function ContractTab({ s }: { s: EditorState }) {
     <div className={styles.editorBlock}>
       <div className={styles.metaGrid}>
         <label>
-          Name (id)
+          Endpoint name
           <input
             value={endpoint.name}
             onChange={(e) => updateEndpoint({ name: e.target.value })}
@@ -21,7 +21,7 @@ export function ContractTab({ s }: { s: EditorState }) {
           />
         </label>
         <label>
-          Path (URL)
+          Address (URL path)
           <input
             value={endpoint.path}
             onChange={(e) => updateEndpoint({ path: e.target.value })}
@@ -35,7 +35,7 @@ export function ContractTab({ s }: { s: EditorState }) {
           )}
         </label>
         <label>
-          Primary key
+          Unique id column
           <select
             value={endpoint.primary_key}
             onChange={(e) => updateEndpoint({ primary_key: e.target.value })}
@@ -48,7 +48,7 @@ export function ContractTab({ s }: { s: EditorState }) {
           </select>
         </label>
         <label>
-          Pagination mode
+          Paging style
           <select
             value={endpoint.pagination?.mode ?? "cursor"}
             onChange={(e) =>
@@ -62,12 +62,12 @@ export function ContractTab({ s }: { s: EditorState }) {
               })
             }
           >
-            <option value="cursor">Cursor</option>
-            <option value="offset">Offset</option>
+            <option value="cursor">Next-page links (fast, recommended)</option>
+            <option value="offset">Page numbers (offset)</option>
           </select>
         </label>
         <label>
-          Default limit
+          Rows per page (default)
           <input
             type="number"
             min={1}
@@ -85,7 +85,7 @@ export function ContractTab({ s }: { s: EditorState }) {
           />
         </label>
         <label>
-          Max limit
+          Rows per page (maximum)
           <input
             type="number"
             min={1}
@@ -125,7 +125,7 @@ export function ContractTab({ s }: { s: EditorState }) {
             })
           }
         />
-        Pagination enabled
+        Split results into pages
       </label>
       <label className={styles.check}>
         <input
@@ -133,12 +133,12 @@ export function ContractTab({ s }: { s: EditorState }) {
           checked={endpoint.allow_sensitive ?? false}
           onChange={(e) => updateEndpoint({ allow_sensitive: e.target.checked })}
         />
-        Allow sensitive columns
+        Allow private-looking columns (passwords, tokens, keys)
       </label>
 
       {!endpoint.sql && (
         <>
-          <h3>Methods</h3>
+          <h3>Allowed operations</h3>
           <div className={styles.allowlist}>
             {ALL_METHODS.map((m) => (
               <button
@@ -157,7 +157,7 @@ export function ContractTab({ s }: { s: EditorState }) {
         </>
       )}
 
-      <h3>Fields</h3>
+      <h3>Fields in the response</h3>
       <div className={styles.allowlist}>
         {(selected?.columns ?? endpoint.fields.map((name) => ({ name, sensitive: false, primary_key: name === endpoint.primary_key, type: "", nullable: true }))).map(
           (col) => {
@@ -184,7 +184,7 @@ export function ContractTab({ s }: { s: EditorState }) {
 
       <div className={styles.twoCol}>
         <div>
-          <h3>Filters</h3>
+          <h3>Can filter by</h3>
           <div className={styles.allowlist}>
             {endpoint.fields.map((f) => (
               <button
@@ -202,7 +202,7 @@ export function ContractTab({ s }: { s: EditorState }) {
           </div>
         </div>
         <div>
-          <h3>Sortable</h3>
+          <h3>Can sort by</h3>
           <div className={styles.allowlist}>
             {endpoint.fields.map((f) => (
               <button
@@ -223,7 +223,7 @@ export function ContractTab({ s }: { s: EditorState }) {
 
       {!endpoint.sql && (
         <div>
-          <h3>Writable fields</h3>
+          <h3>Fields callers may change</h3>
           <div className={styles.allowlist}>
             {endpoint.fields
               .filter((f) => f !== endpoint.primary_key)
@@ -244,7 +244,9 @@ export function ContractTab({ s }: { s: EditorState }) {
         </div>
       )}
 
-      <h3>Filter operators</h3>
+      <details className={styles.advanced}>
+        <summary>Advanced: filter types, bulk writes and file exports</summary>
+      <h3>Filter types</h3>
       <div className={styles.allowlist}>
         {ALL_FILTER_OPS.map((op) => {
           const on = (endpoint.filter_operators ?? [...ALL_FILTER_OPS]).includes(op);
@@ -310,6 +312,7 @@ export function ContractTab({ s }: { s: EditorState }) {
           Parquet export (requires pyarrow)
         </label>
       </div>
+      </details>
     </div>
     </>
   );

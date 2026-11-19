@@ -227,6 +227,15 @@ def _check_if_none_match(request: Request, etag: str) -> bool:
     return etag in [p.strip() for p in if_none.split(",")]
 
 
+def _mounted_url(request: Request):  # type: ignore[no-untyped-def]
+    """Request URL including its mount (/data, /apis/<name>): links must work for clients."""
+    root = request.scope.get("root_path") or ""
+    url = request.url
+    if root and not url.path.startswith(root):
+        url = url.replace(path=root + url.path)
+    return url
+
+
 def _pagination_link_header(
     request: Request,
     *,
@@ -239,15 +248,15 @@ def _pagination_link_header(
     links: list[str] = []
     if mode == PaginationMode.CURSOR:
         if next_cursor:
-            next_url = str(request.url.include_query_params(cursor=next_cursor, limit=limit))
+            next_url = str(_mounted_url(request).include_query_params(cursor=next_cursor, limit=limit))
             links.append(f'<{next_url}>; rel="next"')
     else:
         if total is not None and offset + limit < total:
-            next_url = str(request.url.include_query_params(offset=offset + limit, limit=limit))
+            next_url = str(_mounted_url(request).include_query_params(offset=offset + limit, limit=limit))
             links.append(f'<{next_url}>; rel="next"')
         if offset > 0:
             prev = max(0, offset - limit)
-            prev_url = str(request.url.include_query_params(offset=prev, limit=limit))
+            prev_url = str(_mounted_url(request).include_query_params(offset=prev, limit=limit))
             links.append(f'<{prev_url}>; rel="prev"')
     return ", ".join(links) if links else None
 

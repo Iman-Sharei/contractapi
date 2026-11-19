@@ -2,6 +2,7 @@
 
 import { activateSpec, dumpYaml, getApiBase, introspectDatabase, issueToken, listSpecs, loadSpec, previewSql, saveSpec, tryDataRequest, validateSpec } from "@/lib/api";
 import type { DatabaseDriver } from "@/lib/types";
+import { LIVE_CHANGED_EVENT } from "@/lib/events";
 import { isWarehouseDriver, type EditorCore } from "./useEditorCore";
 
 export function ioActions(c: EditorCore) {
@@ -28,8 +29,12 @@ export function ioActions(c: EditorCore) {
     }
     startTransition(async () => {
       try {
-        const result = await activateSpec(draftSpec, specName);
-        setStatus(`${result.message} → ${getApiBase()}${result.docs_path}`);
+        // Save first, so what is live is always the saved version (no hidden drafts).
+        await saveSpec(specName, draftSpec);
+        setDirty(false);
+        await activateSpec(draftSpec, specName);
+        setStatus(`Saved and live at ${getApiBase()}/apis/${specName}`);
+        window.dispatchEvent(new Event(LIVE_CHANGED_EVENT));
         if (endpoint) {
           const prefix = draftSpec.app.api_prefix || "";
           setPlayPath(`${prefix}${endpoint.path}`);
@@ -179,6 +184,7 @@ export function ioActions(c: EditorCore) {
             "studio-user",
             Number.isFinite(playExpiresMin) ? playExpiresMin : 15,
             claims,
+            specName,
           );
           bearer = tok.access_token;
           setPlayBearer(bearer);
@@ -190,6 +196,7 @@ export function ioActions(c: EditorCore) {
           body: playBody,
           authMode: spec.app.auth,
           bearer,
+          api: specName,
         });
         const headerLines = Object.entries(result.headers)
           .filter(([k]) =>

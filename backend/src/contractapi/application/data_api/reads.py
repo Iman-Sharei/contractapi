@@ -43,6 +43,27 @@ from contractapi.infrastructure.db.errors import db_error
 from contractapi.infrastructure.observability import metrics
 
 
+def _wants_export(endpoint: EndpointSpec, request: Request) -> bool:
+    accept = (request.headers.get("accept") or "").lower()
+    fmt = request.query_params.get("format")
+    return (
+        (endpoint.csv_export and (fmt == "csv" or "text/csv" in accept))
+        or (endpoint.ndjson_export and (fmt == "ndjson" or "ndjson" in accept))
+        or (endpoint.parquet_export and (fmt == "parquet" or "parquet" in accept))
+    )
+
+
+def _list_headers(endpoint: EndpointSpec, link: str | None) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if link:
+        headers["Link"] = link
+    if endpoint.deprecation.deprecated:
+        headers["Deprecation"] = "true"
+        if endpoint.deprecation.sunset:
+            headers["Sunset"] = endpoint.deprecation.sunset
+    return headers
+
+
 def _add_list(
     router: APIRouter,
     engine: Engine,
@@ -92,16 +113,22 @@ def _add_list(
             f"{_cache_prefix(spec, endpoint)}{_row_scope(endpoint, request)}"
             f"list:{request.url.query}:fields={','.join(fields)}"
         )
-        if spec.app.cache.enabled:
+        # The cache holds JSON pages only; CSV/NDJSON/Parquet requests always build fresh.
+        if spec.app.cache.enabled and not _wants_export(endpoint, request):
             cached = response_cache.get(cache_key)
             if cached is not None:
                 metrics.incr("contractapi_cache_hits_total", labels={"endpoint": endpoint.name})
-                headers = {}
-                link = cached.get("_link") if isinstance(cached, dict) else None
-                body = {k: v for k, v in cached.items() if k != "_link"} if isinstance(cached, dict) else cached
-                if link:
-                    headers["Link"] = link
-                return _json_response(body, headers=headers)
+                # Links are rebuilt per request: the same data is served under /data and
+                # /apis/<name>, possibly via different hosts — a cached absolute URL would be wrong.
+                link = _pagination_link_header(
+                    request,
+                    mode=endpoint.pagination.mode,
+                    limit=cached.get("limit", limit),
+                    offset=cached.get("offset", 0),
+                    total=cached.get("total"),
+                    next_cursor=cached.get("next_cursor"),
+                )
+                return _json_response(cached, headers=_list_headers(endpoint, link))
             metrics.incr("contractapi_cache_misses_total", labels={"endpoint": endpoint.name})
 
         # Filters/sort only on fields this caller may see — else hidden values leak by inference.
@@ -242,19 +269,9 @@ def _add_list(
             next_cursor=next_cursor,
         )
         if spec.app.cache.enabled:
-            to_cache = dict(payload)
-            if link:
-                to_cache["_link"] = link
-            response_cache.set(cache_key, to_cache, spec.app.cache.ttl_seconds)
+            response_cache.set(cache_key, payload, spec.app.cache.ttl_seconds)
 
-        headers = {}
-        if link:
-            headers["Link"] = link
-        if endpoint.deprecation.deprecated:
-            headers["Deprecation"] = "true"
-            if endpoint.deprecation.sunset:
-                headers["Sunset"] = endpoint.deprecation.sunset
-        return _json_response(payload, headers=headers)
+        return _json_response(payload, headers=_list_headers(endpoint, link))
 
     list_items.__name__ = f"list_{endpoint.name}"
     router.add_api_route(

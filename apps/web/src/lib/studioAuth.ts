@@ -22,6 +22,18 @@ export function backendBase(env: Env): string {
   return (env.API_BASE || env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000").replace(/\/$/, "");
 }
 
+/** Address browsers and API callers use (may differ from the internal backend address). */
+export function publicApiBase(env: Env): string {
+  return (env.NEXT_PUBLIC_API_BASE || backendBase(env)).replace(/\/$/, "");
+}
+
+/** Rewrite internal backend URLs (e.g. http://api:8000) in a header value to the public base. */
+export function toPublicUrls(value: string, env: Env): string {
+  const internal = backendBase(env);
+  const pub = publicApiBase(env);
+  return internal === pub ? value : value.split(internal).join(pub);
+}
+
 export function oidcCookieName(env: Env): string {
   return env.STUDIO_OIDC_COOKIE_NAME || "contractapi_oidc";
 }

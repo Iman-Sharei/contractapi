@@ -51,10 +51,11 @@ function DiffInner() {
   return (
     <>
       <section className={styles.heroBlock}>
-        <p className={styles.kicker}>Contract compare</p>
-        <h1 className={styles.title}>Diff APIs</h1>
+        <p className={styles.kicker}>Studio</p>
+        <h1 className={styles.title}>Compare versions</h1>
         <p className={styles.lede}>
-          Compare OpenAPI surfaces of two saved specs. Breaking path/method removals are flagged.
+          Pick two saved APIs to see what changed. Changes that would break existing callers (a
+          removed address or operation) are flagged.
         </p>
       </section>
 
@@ -104,7 +105,7 @@ function DiffInner() {
 
       {result && (
         <section className={styles.panel}>
-          <h2>{result.breaking ? "Breaking changes detected" : "Compatible changes"}</h2>
+          <h2>{result.breaking ? "These changes would break existing callers" : "Safe changes — existing callers keep working"}</h2>
           <p>
             +{result.summary.added} / ~{result.summary.updated} / −{result.summary.removed}
           </p>

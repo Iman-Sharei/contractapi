@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+### Studio: simpler flow for non-coders
+- New-API wizard asks for server, port, database, user and password as separate fields (a
+  connection URL is optional), warns before reusing an existing name, and says "Publish API"
+- Writes are a single "Also allow adding, changing and deleting rows" switch, off by default,
+  with a plain-language warning; new APIs start at version 1.0.0
+- API page shows Live / Draft, a success banner after publishing, and Stop / Make live / Delete
+- Editor groups rarely-needed options under "Advanced"; labels use plain words
+  ("Who can use it?", "Address (URL path)", "Rows per page")
+- Navigation: one active item, no horizontal scroll on phones; landing page rewritten
+
+### Fixes
+- Signing in from a link on the home page no longer stays stuck on the login page
+- "Stop" on an API page stopped every API; it now stops only that one
+- Pagination `Link` headers, async-job `Location` and `/apis/<name>/docs` keep the mount prefix
+  (`/data` or `/apis/<name>`); cached pages rebuild links per request
+- `Accept: text/csv` (and other exports) is never answered from the JSON cache
+- "Try it" and its code snippets call the API being edited (`/apis/<name>`), not the primary
+  `/data`; `Link`/`Location` headers show the public address instead of the internal host
+- Editor "Save & make live" saves first, then activates (no more "undefined" status)
+- e2e tests remove the APIs and keys they create
+
 ## 0.6.1 — 2026-11-19 (Beta)
 
 ### Fixes

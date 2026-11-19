@@ -212,10 +212,11 @@ export async function issueToken(
   sub = "studio-user",
   expiresMinutes = 15,
   claims: Record<string, string | number | boolean> = {},
+  api?: string,
 ) {
   return studioFetch<{ access_token: string; token_type: string }>("/token", {
     method: "POST",
-    body: JSON.stringify({ sub, roles, expires_minutes: expiresMinutes, claims }),
+    body: JSON.stringify({ sub, roles, expires_minutes: expiresMinutes, claims, api: api ?? null }),
   });
 }
 
@@ -376,6 +377,8 @@ export type TryRequest = {
   authMode: "none" | "api_key" | "jwt";
   bearer?: string;
   accept?: string;
+  /** Saved API name: requests go to /apis/<name>. */
+  api?: string;
 };
 
 export async function tryDataRequest(req: TryRequest): Promise<{
@@ -385,7 +388,9 @@ export async function tryDataRequest(req: TryRequest): Promise<{
   ms: number;
 }> {
   const clean = req.path.replace(/^\/+/, "");
-  const url = `${DATA_PROXY}/${clean}${req.query ? `?${req.query}` : ""}`;
+  // Target the API being edited (/apis/<name>), not whichever API is primary under /data.
+  const base = req.api ? `${DATA_PROXY}/apis/${encodeURIComponent(req.api)}` : DATA_PROXY;
+  const url = `${base}/${clean}${req.query ? `?${req.query}` : ""}`;
   const headers: Record<string, string> = {
     Accept: req.accept || "application/json",
   };
@@ -417,8 +422,10 @@ export function buildClientSnippet(opts: {
   method: string;
   authMode: string;
   query?: string;
+  /** "/apis/<name>" (what Try it calls) or "/data" for the primary API. */
+  mount?: string;
 }): { curl: string; python: string } {
-  const url = `${opts.base}/data${opts.path}${opts.query ? `?${opts.query}` : ""}`;
+  const url = `${opts.base}${opts.mount ?? "/data"}${opts.path}${opts.query ? `?${opts.query}` : ""}`;
   const curlAuth =
     opts.authMode === "api_key"
       ? ` \\\n  -H "X-API-Key: $DATA_API_KEY"`

@@ -77,7 +77,7 @@ def _add_create(router, engine, table, endpoint, spec, item_model, write_model, 
             return _json_response(
                 {"job_id": job.id, "status": "queued"},
                 status_code=202,
-                headers={"Location": f"/jobs/{job.id}"},
+                headers={"Location": f"{request.scope.get('root_path') or ''}/jobs/{job.id}"},
             )
 
         result = _do_insert(engine, table, endpoint, payload)

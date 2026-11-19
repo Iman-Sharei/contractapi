@@ -4,6 +4,7 @@ import {
   DEMO_STUDIO_KEY,
   devAutologin,
   signInHint,
+  toPublicUrls,
   isCrossSiteWrite,
   looksLikeLiveSession,
   studioKeyForRequest,
@@ -45,6 +46,16 @@ describe("signInHint", () => {
     expect(signInHint({ STUDIO_API_KEY: DEMO_STUDIO_KEY })).toEqual({ demoKey: DEMO_STUDIO_KEY });
     expect(signInHint({ STUDIO_API_KEY: "real-secret-key" })).toEqual({ demoKey: null });
     expect(signInHint({})).toEqual({ demoKey: null });
+  });
+});
+
+describe("toPublicUrls", () => {
+  it("replaces the internal backend host in Link headers", () => {
+    const env = { API_BASE: "http://api:8000", NEXT_PUBLIC_API_BASE: "http://localhost:8000/" };
+    expect(toPublicUrls('<http://api:8000/apis/x/orders?cursor=a>; rel="next"', env)).toBe(
+      '<http://localhost:8000/apis/x/orders?cursor=a>; rel="next"',
+    );
+    expect(toPublicUrls("<http://h/x>", { API_BASE: "http://h" })).toBe("<http://h/x>");
   });
 });
 

@@ -6,6 +6,7 @@ import {
   oidcCookieName,
   problem,
   studioKeyForRequest,
+  toPublicUrls,
 } from "@/lib/studioAuth";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,11 @@ async function proxy(req: NextRequest, pathParts: string[]) {
 
   const sub = pathParts.map(encodeURIComponent).join("/");
   const url = new URL(req.url);
-  const target = `${backendBase(env)}/data/${sub}${url.search}`;
+  // /api/data/apis/<name>/... → /apis/<name>/... ; everything else → the primary API under /data.
+  const target =
+    pathParts[0] === "apis"
+      ? `${backendBase(env)}/${sub}${url.search}`
+      : `${backendBase(env)}/data/${sub}${url.search}`;
 
   const headers = new Headers();
   for (const h of ["content-type", "accept", "if-match", "if-none-match", "idempotency-key"]) {
@@ -50,7 +55,9 @@ async function proxy(req: NextRequest, pathParts: string[]) {
   const upstream = await fetch(target, init);
   const outHeaders = new Headers();
   upstream.headers.forEach((v, k) => {
-    if (["content-type", "link", "etag", "x-request-id", "idempotent-replayed", "retry-after"].includes(k)) {
+    if (["link", "location"].includes(k)) {
+      outHeaders.set(k, toPublicUrls(v, env)); // never show the internal Docker hostname
+    } else if (["content-type", "etag", "x-request-id", "idempotent-replayed", "retry-after"].includes(k)) {
       outHeaders.set(k, v);
     }
   });

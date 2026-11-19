@@ -1,12 +1,17 @@
 import { expect, test } from "@playwright/test";
+import { removeApi } from "./cleanup";
 
 // Same DB host rules as studio-wizard.spec.ts (Compose service `db`).
 const DB_URL = process.env.E2E_DATABASE_URL || "postgresql://postgres:postgres@db:5432/app";
 const STUDIO_KEY = process.env.STUDIO_API_KEY || "dev-studio-key-change-me";
 
 test.describe("API page → editor → Use your API", () => {
-  test("activate, get a key and working code, and see path errors inline", async ({ page }) => {
-    const name = `e2e_ed_${Date.now().toString(36)}`;
+  const name = `e2e_ed_${Date.now().toString(36)}`;
+  test.afterEach(async ({ page }) => removeApi(page.request, name));
+
+  test("make live, get a key and working code, stop only this API, see path errors inline", async ({
+    page,
+  }) => {
 
     await page.goto("/login?next=/studio");
     // First-run help: the key is shown only while the server uses the public demo default.
@@ -39,9 +44,11 @@ test.describe("API page → editor → Use your API", () => {
 
     await page.goto(`/studio/${name}`);
     const panel = page.getByTestId("use-your-api");
-    await expect(panel).toContainText("Activate this API");
+    await expect(page.getByTestId("api-status")).toHaveText("Draft — not running");
+    await expect(panel).toContainText("Make this API live");
 
-    await page.getByRole("button", { name: "Activate saved" }).click();
+    await page.getByRole("button", { name: "Make live", exact: true }).click();
+    await expect(page.getByTestId("api-status")).toHaveText("Live", { timeout: 30_000 });
     const url = panel.getByTestId("use-your-api-url");
     await expect(url).toContainText(`/apis/${name}/customers`, { timeout: 30_000 });
     await expect(panel.getByTestId("use-your-api-snippet")).toContainText("curl -s");
@@ -57,12 +64,33 @@ test.describe("API page → editor → Use your API", () => {
     });
     expect(live.status()).toBe(200);
     expect((await live.json()).items).toBeInstanceOf(Array);
+    // Next-page links keep the /apis/<name> mount (callers can follow them as-is).
+    const link = live.headers()["link"] ?? "";
+    if (link) expect(link).toContain(`/apis/${name}/customers`);
+
+    // Interactive docs load this API's own schema.
+    const docs = await page.request.get(`${(await url.textContent())?.trim().replace(/\/customers$/, "")}/openapi.json`);
+    expect(docs.status()).toBe(200);
+
+    // A key is required: no key → 401, not data.
+    const anon = await page.request.get(`${(await url.textContent())?.trim()}?limit=1`);
+    expect(anon.status()).toBe(401);
 
     // Editor explains a bad URL path before the server rejects it.
-    const pathInput = page.getByLabel("Path (URL)");
+    const pathInput = page.getByLabel("Address (URL path)");
     // Wait until the editor finished loading the saved spec, or the load overwrites our edit.
     await expect(pathInput).toHaveValue("/customers", { timeout: 30_000 });
     await pathInput.fill("/Bad Path");
     await expect(page.getByText(/Use lowercase letters/)).toBeVisible();
+
+    // Stop affects only this API; other live APIs keep running.
+    const before = (await (await page.request.get("/api/studio/active/list")).json()) as { apis: { name: string }[] };
+    page.once("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await expect(page.getByTestId("api-status")).toHaveText("Draft — not running", { timeout: 30_000 });
+    const after = (await (await page.request.get("/api/studio/active/list")).json()) as { apis: { name: string }[] };
+    expect(after.apis.map((a) => a.name).sort()).toEqual(
+      before.apis.map((a) => a.name).filter((n) => n !== name).sort(),
+    );
   });
 });

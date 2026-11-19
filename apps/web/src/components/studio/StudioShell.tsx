@@ -61,7 +61,7 @@ export function StudioShell(props: { initialName?: string; embedded?: boolean })
       <div className={contractOpen ? styles.grid : styles.gridYamlCollapsed}>
         <aside className={styles.panel}>
           <div className={styles.panelHead}>
-            <h2>Schema</h2>
+            <h2>Tables</h2>
             <span>{tables.length}</span>
           </div>
           <ul className={styles.tableList}>
@@ -82,7 +82,9 @@ export function StudioShell(props: { initialName?: string; embedded?: boolean })
                 </button>
               </li>
             ))}
-            {tables.length === 0 && <li className={styles.empty}>Introspect to load tables/views.</li>}
+            {tables.length === 0 && (
+              <li className={styles.empty}>Press “Load tables” to see your database.</li>
+            )}
           </ul>
           <div className={styles.stackBtns}>
             {selected && (
@@ -91,16 +93,16 @@ export function StudioShell(props: { initialName?: string; embedded?: boolean })
                 className={styles.secondary}
                 onClick={() => addEndpointFromTable(selected)}
               >
-                Add endpoint from {selected.kind === "view" ? "view" : "table"}
+                Add an endpoint for {selected.name}
               </button>
             )}
             {tables.length === 0 && (
               <button type="button" className={styles.secondary} onClick={onIntrospect} disabled={pending}>
-                Re-introspect database
+                Load tables
               </button>
             )}
             <button type="button" className={styles.secondary} onClick={addSqlEndpoint}>
-              Add SQL / metrics endpoint
+              Add a custom query (SQL)
             </button>
           </div>
         </aside>
@@ -109,7 +111,7 @@ export function StudioShell(props: { initialName?: string; embedded?: boolean })
 
         <aside className={contractOpen ? styles.panel : styles.panelCollapsed}>
           <div className={styles.panelHead}>
-            <h2>Contract</h2>
+            <h2>API file</h2>
             <div className={styles.rowGap}>
               <button
                 type="button"
@@ -117,7 +119,7 @@ export function StudioShell(props: { initialName?: string; embedded?: boolean })
                 aria-expanded={contractOpen}
                 onClick={() => setContractOpen((v) => !v)}
               >
-                {contractOpen ? "Hide YAML" : "Show YAML"}
+                {contractOpen ? "Hide file" : "Show file"}
               </button>
               {contractOpen && (
                 <button
@@ -132,7 +134,7 @@ export function StudioShell(props: { initialName?: string; embedded?: boolean })
           </div>
           {contractOpen && <pre className={styles.yaml}>{yamlText || localYaml}</pre>}
           {!contractOpen && (
-            <p className={styles.empty}>YAML panel collapsed — expand to inspect the live contract.</p>
+            <p className={styles.empty}>The whole API as a YAML file — open it to review or copy.</p>
           )}
         </aside>
       </div>

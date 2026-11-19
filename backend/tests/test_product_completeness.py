@@ -352,3 +352,32 @@ def test_secret_store_encryption_at_rest(tmp_path, monkeypatch):
     get_settings.cache_clear()
     with pytest.raises(AppError, match="encrypted"):
         get_secret("db-y")
+
+
+def test_links_and_docs_keep_the_mount_prefix(pg, monkeypatch):
+    """Next-page links and Swagger must point at /data/... and /apis/<name>/..., not the root."""
+    from contractapi.application.studio_service import spec_store
+    from contractapi.interfaces.http.app_factory import create_studio_app
+
+    monkeypatch.setenv("RESTORE_ACTIVE_ON_BOOT", "false")
+    get_settings.cache_clear()
+    spec = _orders_spec(pagination={"mode": "cursor", "default_limit": 1, "max_limit": 10})
+    spec_store.set(spec, name="shop", primary=True)
+    try:
+        client = TestClient(create_studio_app())
+        for base in ("/data", "/apis/shop"):
+            r = client.get(f"{base}/orders?limit=1")
+            assert r.status_code == 200, r.text
+            assert f"{base}/orders?" in r.headers["link"], r.headers["link"]
+            nxt = r.headers["link"].split(">")[0].lstrip("<")
+            assert client.get(nxt).status_code == 200  # the link actually works
+            assert f"{base}/openapi.json" in client.get(f"{base}/docs").text
+    finally:
+        spec_store.clear()
+
+
+def test_csv_via_accept_is_not_served_from_the_json_cache(pg):
+    client = TestClient(create_data_app(_orders_spec()))
+    assert client.get("/orders?limit=2").headers["content-type"].startswith("application/json")
+    r = client.get("/orders?limit=2", headers={"Accept": "text/csv"})
+    assert r.headers["content-type"].startswith("text/csv"), r.headers["content-type"]

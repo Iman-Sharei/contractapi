@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { formatApiError } from "@/lib/formatError";
 import styles from "@/components/studio/flow.module.css";
 
@@ -11,7 +11,6 @@ function safeNext(raw: string | null): string {
 }
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
   const [key, setKey] = useState("");
@@ -42,8 +41,9 @@ function LoginForm() {
     });
     setBusy(false);
     if (res.ok) {
-      router.replace(next);
-      router.refresh();
+      // Full navigation: the client router may hold a "redirect to /login" cached from a link
+      // prefetched while signed out, which would bounce the user straight back here.
+      window.location.assign(next);
       return;
     }
     const body = await res.json().catch(() => null);

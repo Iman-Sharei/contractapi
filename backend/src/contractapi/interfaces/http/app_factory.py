@@ -139,6 +139,8 @@ class MultiApiASGI:
             return
         child = dict(scope)
         child["path"] = ("/" + "/".join(tail)) if tail else "/"
+        # The API lives under /apis/<name>: links, redirects and Swagger must use that prefix.
+        child["root_path"] = f"{(scope.get('root_path') or '').rstrip('/')}/{name}"
         await app(child, receive, send)
 
 

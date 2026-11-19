@@ -22,7 +22,7 @@ export function PlayTab({ s }: { s: EditorState }) {
           </select>
         </label>
         <label className={styles.span2}>
-          Path under /data
+          Path (inside this API)
           <input value={playPath} onChange={(e) => setPlayPath(e.target.value)} />
         </label>
         <label className={styles.span2}>

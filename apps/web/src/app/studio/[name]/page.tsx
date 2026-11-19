@@ -1,104 +1,102 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState, useTransition } from "react";
 import { StudioShell } from "@/components/studio/StudioShell";
 import { UseYourApi } from "@/components/studio/UseYourApi";
-import {
-  activateSpec,
-  deactivateSpec,
-  deleteSpec,
-  getActive,
-  getApiBase,
-  loadSpec,
-} from "@/lib/api";
+import { activateSpec, deactivateSpec, deleteSpec, listActiveApis, loadSpec } from "@/lib/api";
+import { LIVE_CHANGED_EVENT } from "@/lib/events";
 import styles from "@/components/studio/flow.module.css";
 
-export default function ApiDetailPage() {
+function ApiDetail() {
   const params = useParams<{ name: string }>();
-  const router = useRouter();
+  const search = useSearchParams();
   const name = decodeURIComponent(params.name);
   const [ready, setReady] = useState(false);
   const [isLive, setIsLive] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(
+    search.get("published")
+      ? "🎉 Your API is live. Its address, a key and ready-to-run code are below."
+      : search.get("saved")
+        ? "Saved as a draft. Press “Make live” when you want it to answer requests."
+        : null,
+  );
   const [pending, startTransition] = useTransition();
   const [liveTick, setLiveTick] = useState(0);
+
+  const refreshLive = useCallback(async () => {
+    try {
+      const active = await listActiveApis();
+      setIsLive(active.apis.some((a) => a.name === name));
+    } catch {
+      /* status badge is best-effort */
+    }
+    setLiveTick((t) => t + 1);
+  }, [name]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         await loadSpec(name);
-        if (cancelled) return;
-        setReady(true);
-        setLoadError(null);
+        if (!cancelled) setLoadError(null);
       } catch (e) {
-        if (cancelled) return;
-        setLoadError(e instanceof Error ? e.message : "Spec not found");
-        setReady(true);
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : "API not found");
       }
-      try {
-        const a = await getActive();
-        if (!cancelled) setIsLive(Boolean(a.active && a.name === name));
-      } catch {
-        /* ignore live badge */
+      if (!cancelled) {
+        setReady(true);
+        await refreshLive();
       }
     })();
+    const onLiveChanged = () => void refreshLive();
+    window.addEventListener(LIVE_CHANGED_EVENT, onLiveChanged);
     return () => {
       cancelled = true;
+      window.removeEventListener(LIVE_CHANGED_EVENT, onLiveChanged);
     };
-  }, [name]);
+  }, [name, refreshLive]);
 
-  function setOk(msg: string) {
-    setMessage(msg);
+  function run(action: () => Promise<void>, ok: string) {
     setError(null);
-  }
-  function setErr(msg: string) {
-    setError(msg);
-    setMessage(null);
-  }
-
-  function onActivate() {
     startTransition(async () => {
       try {
-        const loaded = await loadSpec(name);
-        await activateSpec(loaded.spec, name);
-        setIsLive(true);
-        setLiveTick((t) => t + 1);
-        setOk(`Activated → ${getApiBase()}/data/docs`);
+        await action();
+        setMessage(ok);
+        await refreshLive();
       } catch (e) {
-        setErr(e instanceof Error ? e.message : "Activate failed");
+        setMessage(null);
+        setError(e instanceof Error ? e.message : "Something went wrong.");
       }
     });
   }
 
-  function onDeactivate() {
-    startTransition(async () => {
-      try {
-        await deactivateSpec();
-        setIsLive(false);
-        setLiveTick((t) => t + 1);
-        setOk("Deactivated.");
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : "Deactivate failed");
-      }
-    });
-  }
+  const onMakeLive = () =>
+    run(async () => {
+      const loaded = await loadSpec(name);
+      await activateSpec(loaded.spec, name);
+    }, "Your API is live (saved version).");
 
-  function onDelete() {
-    if (!window.confirm(`Delete '${name}'?`)) return;
+  const onStop = () => {
+    if (!window.confirm(`Stop '${name}'? Callers will get an error until you make it live again.`)) return;
+    run(() => deactivateSpec(name).then(() => undefined), `'${name}' stopped. Other APIs keep running.`);
+  };
+
+  const onDelete = () => {
+    if (!window.confirm(`Delete '${name}'? It is stopped and its saved design removed.`)) return;
+    setError(null);
     startTransition(async () => {
       try {
+        if (isLive) await deactivateSpec(name);
         await deleteSpec(name);
-        router.push("/studio");
+        window.location.assign("/studio");
       } catch (e) {
-        setErr(e instanceof Error ? e.message : "Delete failed");
+        setError(e instanceof Error ? e.message : "Delete failed.");
       }
     });
-  }
+  };
 
   if (!ready) {
     return (
@@ -114,7 +112,7 @@ export default function ApiDetailPage() {
         <h1 className={styles.title}>Not found</h1>
         <p>{loadError}</p>
         <Link className={styles.secondary} href="/studio">
-          ← Catalog
+          ← My APIs
         </Link>
       </section>
     );
@@ -123,30 +121,36 @@ export default function ApiDetailPage() {
   return (
     <>
       <section className={styles.heroBlock}>
-        <p className={styles.kicker}>API detail</p>
-        <h1 className={styles.title}>{name}</h1>
+        <p className={styles.kicker}>API</p>
+        <h1 className={styles.title}>
+          {name}{" "}
+          <span className={isLive ? styles.badgeLive : styles.badge} data-testid="api-status">
+            {isLive ? "Live" : "Draft — not running"}
+          </span>
+        </h1>
         <p className={styles.lede}>
-          Edit the contract in the editor below. Use Save inside the shell, then Activate when ready.
+          Change anything in the editor below, then press <strong>Save &amp; make live</strong> to
+          update the running API.
         </p>
         <div className={styles.toolbar}>
           <Link className={styles.ghost} href="/studio">
-            ← Catalog
+            ← My APIs
           </Link>
-          <button type="button" className={styles.primary} onClick={onActivate} disabled={pending}>
-            Activate saved
-          </button>
-          {isLive && (
-            <button type="button" className={styles.secondary} onClick={onDeactivate} disabled={pending}>
-              Deactivate
+          {isLive ? (
+            <button type="button" className={styles.secondary} onClick={onStop} disabled={pending}>
+              Stop
+            </button>
+          ) : (
+            <button type="button" className={styles.primary} onClick={onMakeLive} disabled={pending}>
+              Make live
             </button>
           )}
           <Link className={styles.secondary} href={`/studio/diff?after=${encodeURIComponent(name)}`}>
-            Diff
+            Compare versions
           </Link>
           <button type="button" className={styles.danger} onClick={onDelete} disabled={pending}>
             Delete
           </button>
-          {isLive && <span className={styles.badgeLive}>live</span>}
         </div>
       </section>
 
@@ -172,5 +176,13 @@ export default function ApiDetailPage() {
         <StudioShell initialName={name} embedded />
       </div>
     </>
+  );
+}
+
+export default function ApiDetailPage() {
+  return (
+    <Suspense>
+      <ApiDetail />
+    </Suspense>
   );
 }

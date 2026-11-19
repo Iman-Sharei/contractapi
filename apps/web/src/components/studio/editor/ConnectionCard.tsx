@@ -1,30 +1,33 @@
 "use client";
 
+import { AUTH_OPTIONS, authHelp } from "@/lib/labels";
 import type { ApiSpecDraft, DatabaseDriver } from "@/lib/types";
 import styles from "../studio.module.css";
 import { isWarehouseDriver, type EditorState } from "./useEditorState";
 
 export function ConnectionCard({ s }: { s: EditorState }) {
-  const { dbUrl, setDbUrl, dbDriver, schema, setSchema, tables, spec, specName, setSpecName, pending, showDbUrl, setShowDbUrl, patchApp, onIntrospect, onDriverChange, onSave, refreshSaved } = s;
+  const { embedded, dbUrl, setDbUrl, dbDriver, schema, setSchema, tables, spec, specName, setSpecName, pending, showDbUrl, setShowDbUrl, patchApp, onIntrospect, onDriverChange, onSave, refreshSaved } = s;
   return (
     <section className={styles.settingsCard}>
       <div className={styles.settingsHead}>
-        <h2>Connection</h2>
+        <h2>Database &amp; access</h2>
         <div className={styles.settingsActions}>
           <button type="button" className={styles.primary} onClick={onIntrospect} disabled={pending}>
-            {tables.length === 0 ? "Introspect schema" : "Re-introspect"}
+            {tables.length === 0 ? "Load tables" : "Reload tables"}
           </button>
           <button type="button" className={styles.secondary} onClick={onSave} disabled={pending}>
-            Save
+            Save changes
           </button>
-          <button type="button" className={styles.secondary} onClick={refreshSaved}>
-            List
-          </button>
+          {!embedded && (
+            <button type="button" className={styles.secondary} onClick={refreshSaved}>
+              Saved APIs
+            </button>
+          )}
         </div>
       </div>
       <div className={styles.fieldGrid}>
         <label>
-          <span className={styles.fieldLabel}>Driver</span>
+          <span className={styles.fieldLabel}>Database type</span>
           <select
             value={dbDriver}
             onChange={(e) => onDriverChange(e.target.value as DatabaseDriver)}
@@ -38,7 +41,7 @@ export function ConnectionCard({ s }: { s: EditorState }) {
         <label className={styles.span2}>
           <span className={styles.fieldLabel}>
             {dbDriver === "postgres"
-              ? "Postgres URL"
+              ? "Connection URL"
               : dbDriver === "duckdb"
                 ? "DuckDB URL"
                 : dbDriver === "snowflake"
@@ -81,22 +84,25 @@ export function ConnectionCard({ s }: { s: EditorState }) {
           />
         </label>
         <label>
-          <span className={styles.fieldLabel}>Spec name</span>
+          <span className={styles.fieldLabel}>API name</span>
           <input value={specName} onChange={(e) => setSpecName(e.target.value)} />
         </label>
         <label>
-          <span className={styles.fieldLabel}>Auth</span>
+          <span className={styles.fieldLabel}>Who can use it?</span>
           <select
             value={spec.app.auth}
             onChange={(e) => patchApp({ auth: e.target.value as ApiSpecDraft["app"]["auth"] })}
           >
-            <option value="api_key">API key</option>
-            <option value="jwt">JWT + RBAC</option>
-            <option value="none">None (dev)</option>
+            {AUTH_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
           </select>
+          <span className={styles.hint}>{authHelp(spec.app.auth)}</span>
         </label>
         <label>
-          <span className={styles.fieldLabel}>API prefix</span>
+          <span className={styles.fieldLabel}>Version in the address (optional)</span>
           <input
             value={spec.app.api_prefix ?? ""}
             onChange={(e) => patchApp({ api_prefix: e.target.value })}

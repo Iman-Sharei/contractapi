@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { buildClientSnippet, buildYaml, dumpYaml, getApiBase, introspectDatabase, loadSpec } from "@/lib/api";
 import { copyText } from "@/lib/copy";
+import { DEFAULT_API_VERSION } from "@/lib/labels";
 import { tableKey } from "@/lib/tableKey";
 import type { ApiSpecDraft, DatabaseDriver, EndpointDraft, TableInfo, ValidateResult } from "@/lib/types";
 
@@ -28,7 +29,7 @@ export const emptySpec = (url: string, driver: DatabaseDriver = "postgres"): Api
   database: { url, driver },
   app: {
     title: "My Data API",
-    version: "0.5.0",
+    version: DEFAULT_API_VERSION,
     description: "Spec-first API over Postgres",
     read_only: true,
     auth: "api_key",
@@ -110,8 +111,9 @@ export function useEditorCore({
         method: playMethod,
         authMode: spec.app.auth,
         query: playQuery,
+        mount: `/apis/${encodeURIComponent(specName)}`,
       }),
-    [playPath, playMethod, playQuery, spec.app.auth],
+    [playPath, playMethod, playQuery, spec.app.auth, specName],
   );
 
   useEffect(() => {

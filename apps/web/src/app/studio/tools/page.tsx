@@ -111,7 +111,7 @@ export default function ToolsPage() {
         <p className={styles.kicker}>Studio</p>
         <h1 className={styles.title}>Tools</h1>
         <p className={styles.lede}>
-          Git branch browser, dbt model → endpoint helper, and OIDC cookie login.
+          Browse the project&apos;s git history and turn dbt models into API endpoints.
         </p>
         <div className={styles.toolbar}>
           <button type="button" className={styles.ghost} onClick={refreshGit} disabled={pending}>
@@ -136,8 +136,9 @@ export default function ToolsPage() {
         </div>
       )}
 
+      {(oidc?.browser_login || oidc?.authenticated) && (
       <section className={styles.panel} style={{ marginBottom: 16 }}>
-        <h2>OIDC browser login</h2>
+        <h2>Single sign-on</h2>
         <p>
           {oidc?.authenticated
             ? `Signed in as ${oidc.email || "OIDC user"}`
@@ -154,6 +155,7 @@ export default function ToolsPage() {
           </a>
         </div>
       </section>
+      )}
 
       <section className={styles.panel} style={{ marginBottom: 16 }}>
         <h2>Git browser</h2>

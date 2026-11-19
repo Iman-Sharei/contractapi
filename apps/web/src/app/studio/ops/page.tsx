@@ -96,11 +96,11 @@ export default function OpsPage() {
   return (
     <>
       <section className={styles.heroBlock}>
-        <p className={styles.kicker}>Control plane</p>
-        <h1 className={styles.title}>Ops</h1>
+        <p className={styles.kicker}>Studio</p>
+        <h1 className={styles.title}>Keys &amp; settings</h1>
         <p className={styles.lede}>
-          API keys, audit trail, env promote, authenticated Postman/SDK/OpenAPI exports via the
-          Studio BFF (secrets never leave the Next server).
+          Create keys for the people and apps that call your APIs, restore earlier versions, copy an
+          API to staging or production, and download ready-made clients.
         </p>
         <div className={styles.toolbar}>
           <button type="button" className={styles.ghost} onClick={refresh} disabled={pending}>
@@ -126,8 +126,11 @@ export default function OpsPage() {
       )}
 
       <section className={styles.panel} style={{ marginBottom: 16 }}>
-        <h2>Data API keys</h2>
-        <p>Create / revoke managed keys (also accepts env DATA_API_KEYS).</p>
+        <h2>API keys</h2>
+        <p>
+          Give each app or person its own key, so you can revoke one without breaking the others. A
+          new key is shown only once.
+        </p>
         <div className={styles.toolbar}>
           <input
             value={newKeyName}
@@ -215,14 +218,14 @@ export default function OpsPage() {
               )}
             </div>
           ))}
-          {keys.length === 0 && <p className={styles.lede}>No managed keys yet.</p>}
+          {keys.length === 0 && <p className={styles.lede}>No keys yet.</p>}
         </div>
       </section>
 
       <section className={styles.panel} style={{ marginBottom: 16 }}>
-        <h2>Promote environment</h2>
+        <h2>Copy to another environment</h2>
         <p>
-          Copies a saved spec to <code>{promoteName || "name"}_{env}</code> with env stamp.
+          Saves a copy named <code>{promoteName || "name"}_{env}</code>, marked for that environment.
         </p>
         <div className={styles.diffGrid}>
           <label className={styles.field}>
@@ -267,7 +270,7 @@ export default function OpsPage() {
       </section>
 
       <section className={styles.panel} style={{ marginBottom: 16 }}>
-        <h2>History restore</h2>
+        <h2>Restore an earlier version</h2>
         <p>Every Save snapshots the previous YAML. Preview before restore.</p>
         <div className={styles.diffGrid}>
           <label className={styles.field}>
@@ -323,7 +326,7 @@ export default function OpsPage() {
             </div>
           ))}
           {snapshots.length === 0 && (
-            <p className={styles.lede}>No snapshots yet — Save a spec twice to create history.</p>
+            <p className={styles.lede}>No earlier versions yet — every save keeps the previous one here.</p>
           )}
         </div>
         {previewYaml && (
@@ -350,7 +353,7 @@ export default function OpsPage() {
       </section>
 
       <section className={styles.panel} style={{ marginBottom: 16 }}>
-        <h2>Exports</h2>
+        <h2>Downloads (Postman, Python client, OpenAPI)</h2>
         <p>Downloads go through the authenticated BFF — no manual X-API-Key in the browser.</p>
         <div className={styles.sourceList}>
           {specs.map((s) => (
@@ -428,12 +431,12 @@ export default function OpsPage() {
               </div>
             </div>
           ))}
-          {specs.length === 0 && <p className={styles.lede}>Save an API first to export.</p>}
+          {specs.length === 0 && <p className={styles.lede}>Save an API first.</p>}
         </div>
       </section>
 
       <section className={styles.panel}>
-        <h2>Audit (recent)</h2>
+        <h2>Recent activity</h2>
         {events.length === 0 ? (
           <p className={styles.lede}>No events in memory yet.</p>
         ) : (
