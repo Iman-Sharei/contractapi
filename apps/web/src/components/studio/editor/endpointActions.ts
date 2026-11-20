@@ -1,11 +1,12 @@
 "use client";
 
 import { introspectDatabase } from "@/lib/api";
+import { defaultSchema, parseDbUrl } from "@/lib/dbUrl";
 import { defaultSafeColumns } from "@/lib/pickColumns";
 import { tableKey } from "@/lib/tableKey";
 import type { DatabaseDriver, EndpointDraft, TableInfo } from "@/lib/types";
 import { ALL_FILTER_OPS } from "@/lib/types";
-import { PG_DEFAULT_URL, DUCKDB_DEFAULT_URL, SNOWFLAKE_DEFAULT_URL, BIGQUERY_DEFAULT_URL, isWarehouseDriver, slugify, type EditorCore } from "./useEditorCore";
+import { PG_DEFAULT_URL, MYSQL_DEFAULT_URL, SQLSERVER_DEFAULT_URL, DUCKDB_DEFAULT_URL, SNOWFLAKE_DEFAULT_URL, BIGQUERY_DEFAULT_URL, isWarehouseDriver, slugify, type EditorCore } from "./useEditorCore";
 
 export function endpointActions(c: EditorCore) {
   const { dbUrl, setDbUrl, dbDriver, setDbDriver, schema, setSchema, setTables, setSelectedTable, spec, setSpec, setActiveEndpoint, setEditorTab, startTransition, sqlDraft, endpoint, setStatus, patchApp, updateEndpoint } = c;
@@ -46,32 +47,25 @@ export function endpointActions(c: EditorCore) {
     setDbDriver(next);
     const defaults: Record<DatabaseDriver, string> = {
       postgres: PG_DEFAULT_URL,
+      mysql: MYSQL_DEFAULT_URL,
+      sqlserver: SQLSERVER_DEFAULT_URL,
       duckdb: DUCKDB_DEFAULT_URL,
       snowflake: SNOWFLAKE_DEFAULT_URL,
       bigquery: BIGQUERY_DEFAULT_URL,
     };
+    // Keep the URL only when it already belongs to the chosen database.
+    const parsed = parseDbUrl(dbUrl);
+    const sameKind = parsed ? parsed.kind === next : dbUrl.startsWith(`${next}:`);
     let nextUrl = dbUrl;
-    if (isWarehouseDriver(next) && (dbUrl.startsWith("postgresql") || dbUrl.startsWith("postgres"))) {
-      nextUrl = defaults[next];
-      setDbUrl(nextUrl);
-      setTables([]);
-      setSelectedTable(null);
-    } else if (
-      next === "postgres" &&
-      (dbUrl.startsWith("duckdb") ||
-        dbUrl.startsWith("snowflake") ||
-        dbUrl.startsWith("bigquery") ||
-        dbUrl === ":memory:")
-    ) {
-      nextUrl = PG_DEFAULT_URL;
-      setDbUrl(nextUrl);
-    } else if (isWarehouseDriver(next)) {
+    if (!sameKind) {
       nextUrl = defaults[next];
       setDbUrl(nextUrl);
       setTables([]);
       setSelectedTable(null);
     }
-    setSchema(next === "duckdb" ? "main" : "public");
+    const server = next === "postgres" || next === "mysql" || next === "sqlserver";
+    const db = parseDbUrl(nextUrl)?.fields.database ?? "";
+    setSchema(next === "duckdb" ? "main" : server ? defaultSchema(next, db) : "public");
     setSpec((prev) => ({
       ...prev,
       database: { url: nextUrl, driver: next },
@@ -133,7 +127,7 @@ export function endpointActions(c: EditorCore) {
     while (spec.endpoints.some((e) => e.name === name)) name = `custom_query_${i++}`;
     const draft: EndpointDraft = {
       name,
-      path: `/analytics/${name}`,
+      path: `/analytics/${name.replace(/_/g, "-")}`,
       table: "_sql",
       schema: "public",
       sql: sqlDraft,

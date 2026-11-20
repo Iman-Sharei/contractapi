@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl git \
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY examples ./examples
-# GA extras for Studio deploy demos (Parquet / DuckDB / GraphQL / OIDC crypto).
-# Warehouse drivers (snowflake/bigquery) stay optional — pull at runtime if needed.
-RUN pip install --no-cache-dir ".[redis,parquet,duckdb,graphql,oidc]"
+# GA extras for Studio deploy demos (Parquet / DuckDB / GraphQL / OIDC crypto) and the
+# MySQL / SQL Server drivers. Warehouse drivers (snowflake/bigquery) stay optional.
+RUN pip install --no-cache-dir ".[redis,parquet,duckdb,graphql,oidc,mysql,sqlserver]"
 
 ENV SPECS_DIR=/data/specs \
     AUDIT_LOG_PATH=/data/logs/audit.jsonl \

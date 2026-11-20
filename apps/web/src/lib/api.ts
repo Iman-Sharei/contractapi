@@ -4,6 +4,7 @@ import type {
   ActiveApiMount,
   ActiveInfo,
   ApiSpecDraft,
+  DatabaseDriver,
   OpenApiDiff,
   SpecListItem,
   StudioHealth,
@@ -223,7 +224,7 @@ export async function issueToken(
 export async function previewSql(
   databaseUrl: string,
   sql: string,
-  driver: "postgres" | "duckdb" | "snowflake" | "bigquery" = "postgres",
+  driver: DatabaseDriver = "postgres",
 ) {
   return studioFetch<{ columns: string[]; count: number }>("/sql-preview", {
     method: "POST",

@@ -49,8 +49,10 @@ graphql = ["strawberry-graphql[fastapi]>=0.243.0"]
 oidc = ["cryptography>=43.0.0"]
 snowflake = ["snowflake-sqlalchemy>=1.6.0"]
 bigquery = ["sqlalchemy-bigquery>=1.11.0"]
+mysql = ["pymysql>=1.1.0"]
+sqlserver = ["pymssql>=2.3.0"]
 all = [
-  "contractapi[redis,parquet,duckdb,graphql,oidc,snowflake,bigquery]",
+  "contractapi[redis,parquet,duckdb,graphql,oidc,snowflake,bigquery,mysql,sqlserver]",
 ]
 dev = [
   "pytest>=8.3.0",

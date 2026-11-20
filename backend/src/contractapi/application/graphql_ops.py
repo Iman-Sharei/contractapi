@@ -11,6 +11,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, EndpointSpec
+from contractapi.infrastructure.db.dialects import MSSQL, dialect_of, page_sql
+from contractapi.infrastructure.db.introspect import resolve_schema
 
 _IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
@@ -24,7 +26,7 @@ def _quote_ident(name: str) -> str:
 def _load_table(engine: Engine, ep: EndpointSpec) -> Table:
     """Reflect table when possible; otherwise build a lightweight column map."""
     metadata = MetaData()
-    schema = ep.schema_name or None
+    schema = resolve_schema(engine, ep.schema_name) if ep.schema_name else None
     if schema in {"main", "public"}:
         try:
             return Table(ep.table, metadata, autoload_with=engine)
@@ -44,11 +46,15 @@ def _fetch_sql_rows(
     *,
     bind_params: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    inner = (ep.sql or "").strip().rstrip(";").strip()
+    from contractapi.application.sql_endpoint import _inner_sql
+
+    inner = _inner_sql(ep, engine)
     if not inner:
         raise ValueError(f"Endpoint '{ep.name}' has empty SQL.")
     fields_sql = ", ".join(f"q.{_quote_ident(f)}" for f in ep.fields)
-    sql = text(f"SELECT {fields_sql} FROM ({inner}) AS q LIMIT :_limit")
+    dialect = dialect_of(engine)
+    order = f" ORDER BY q.{_quote_ident(ep.primary_key)}" if dialect == MSSQL else ""
+    sql = text(f"SELECT {fields_sql} FROM ({inner}) AS q{order}{page_sql(dialect, offset=False)}")
     params: dict[str, Any] = {"_limit": limit}
     # Apply declared sql_params defaults / provided binds only.
     provided = bind_params or {}
@@ -121,14 +127,16 @@ def _fetch_rows(
         return _fetch_sql_rows(engine, ep, limit, bind_params=bind_params)
     sec_clauses, sec_params = _security_sql(ep, principal or {})
     fields_sql = ", ".join(_quote_ident(f) for f in ep.fields)
-    schema = ep.schema_name
+    schema = resolve_schema(engine, ep.schema_name) if ep.schema_name else None
     if schema and schema not in {"main", ""}:
         table_sql = f"{_quote_ident(schema)}.{_quote_ident(ep.table)}"
     else:
         table_sql = _quote_ident(ep.table)
     where = f" WHERE {' AND '.join(sec_clauses)}" if sec_clauses else ""
-    sql = text(f"SELECT {fields_sql} FROM {table_sql}{where} LIMIT :limit")
-    params = {"limit": limit, **sec_params}
+    dialect = dialect_of(engine)
+    order = f" ORDER BY {_quote_ident(ep.primary_key)}" if dialect == MSSQL else ""
+    sql = text(f"SELECT {fields_sql} FROM {table_sql}{where}{order}{page_sql(dialect, offset=False)}")
+    params = {"_limit": limit, **sec_params}
     with engine.connect() as conn:
         rows = conn.execute(sql, params).mappings().all()
     return [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows]
@@ -149,6 +157,10 @@ def _apply_rbac(
 
 
 def _jsonable(value: Any) -> Any:
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    return str(value)
+    """Same value format as REST (ISO dates, numbers for decimals, text UUIDs)."""
+    from contractapi.application.data_api.common import _serialize
+
+    out = _serialize(value)
+    if out is None or isinstance(out, (bool, int, float, str, list, dict)):
+        return out
+    return str(out)

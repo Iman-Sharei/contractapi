@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_PG, buildPgUrl, missingPgFields, parsePgUrl } from "./dbUrl";
+import { DEMO_PG, SERVER_DBS, buildDbUrl, buildPgUrl, defaultSchema, missingPgFields, parseDbUrl, parsePgUrl } from "./dbUrl";
 
 describe("dbUrl", () => {
   it("builds the demo URL", () => {
@@ -23,5 +23,23 @@ describe("dbUrl", () => {
       "a numeric port",
     ]);
     expect(missingPgFields(DEMO_PG)).toEqual([]);
+  });
+  it("builds and parses MySQL and SQL Server URLs", () => {
+    const mysql = SERVER_DBS.find((d) => d.value === "mysql")!.demo;
+    expect(buildDbUrl("mysql", mysql)).toBe("mysql://demo:demo@mysql:3306/app");
+    const sql = SERVER_DBS.find((d) => d.value === "sqlserver")!.demo;
+    const url = buildDbUrl("sqlserver", sql);
+    expect(url).toBe("mssql://sa:Demo_pass_2024!@sqlserver:1433/master");
+    expect(parseDbUrl(url)).toEqual({ kind: "sqlserver", fields: sql });
+    expect(parseDbUrl("mysql+pymysql://u:p@h/sales")).toEqual({
+      kind: "mysql",
+      fields: { user: "u", password: "p", host: "h", port: "3306", database: "sales" },
+    });
+    expect(parsePgUrl(url)).toBeNull();
+  });
+  it("picks the default schema per database", () => {
+    expect(defaultSchema("postgres", "app")).toBe("public");
+    expect(defaultSchema("mysql", "sales")).toBe("sales");
+    expect(defaultSchema("sqlserver", "master")).toBe("dbo");
   });
 });

@@ -36,8 +36,26 @@ def safe_db_message(exc: BaseException) -> str:
     Keeps actionable text ("password authentication failed for user", "could not
     translate host name") so non-experts can fix their connection settings.
     """
-    raw = str(getattr(exc, "orig", None) or exc).strip()
-    first = raw.splitlines()[0] if raw else exc.__class__.__name__
+    first = _readable(getattr(exc, "orig", None) or exc) or exc.__class__.__name__
     first = _URL_CREDS.sub(r"\1***@", first)
     first = _PASSWORD_KV.sub(r"\1***", first)
     return first[:300]
+
+
+def _readable(err: BaseException) -> str:
+    """The human part of a driver error, without codes, byte strings or tuple syntax.
+
+    PyMySQL: (2003, "Can't connect to MySQL server on 'db' (…)")
+    pymssql: (20009, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: …\\n')
+    """
+    args = getattr(err, "args", ())
+    if len(args) == 1 and isinstance(args[0], tuple):  # pymssql wraps (code, message) in a tuple
+        args = args[0]
+    if len(args) >= 2 and isinstance(args[0], int):
+        msg = args[-1]
+        text = msg.decode("utf-8", "replace") if isinstance(msg, bytes) else str(msg)
+    else:
+        text = str(err)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    useful = [ln for ln in lines if not ln.startswith(("DB-Lib error message", "Net-Lib error"))]
+    return (useful or lines or [""])[0]

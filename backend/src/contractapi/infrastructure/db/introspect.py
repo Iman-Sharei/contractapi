@@ -1,4 +1,4 @@
-"""Postgres schema introspection via SQLAlchemy reflection."""
+"""Schema introspection via SQLAlchemy reflection (Postgres, MySQL, SQL Server, DuckDB)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ from sqlalchemy import MetaData, Table, inspect
 from sqlalchemy.engine import Engine
 
 from contractapi.domain.sensitive import find_sensitive_columns
-from contractapi.infrastructure.db.engine import create_pg_engine
+from contractapi.infrastructure.db.dialects import dialect_of, table_schema
+from contractapi.infrastructure.db.engine import create_engine_for_url
 
 
 @dataclass
@@ -42,12 +43,18 @@ class TableInfo:
 
 
 def introspect_schema(url: str, schema: str = "public") -> list[TableInfo]:
-    engine = create_pg_engine(url, pooled=False)
+    engine = create_engine_for_url(url)
     return introspect_with_engine(engine, schema=schema)
+
+
+def resolve_schema(engine: Engine, schema: str | None) -> str | None:
+    """`public` → the default schema of this database (database name on MySQL, dbo on SQL Server)."""
+    return table_schema(dialect_of(engine), schema, database=engine.url.database)
 
 
 def introspect_with_engine(engine: Engine, schema: str = "public") -> list[TableInfo]:
     inspector = inspect(engine)
+    schema = resolve_schema(engine, schema)  # type: ignore[assignment]
     tables: list[TableInfo] = []
     for table_name in inspector.get_table_names(schema=schema):
         tables.append(_build_table_info(inspector, table_name, schema, kind="table"))
@@ -98,11 +105,11 @@ def _build_table_info(
 
 def get_table(engine: Engine, table: str, schema: str = "public") -> Table:
     metadata = MetaData()
-    return Table(table, metadata, schema=schema, autoload_with=engine)
+    return Table(table, metadata, schema=resolve_schema(engine, schema), autoload_with=engine)
 
 
 def missing_columns(url: str, table: str, schema: str, fields: list[str]) -> list[str]:
-    engine = create_pg_engine(url, pooled=False)
+    engine = create_engine_for_url(url)
     inspector = inspect(engine)
-    existing = {c["name"] for c in inspector.get_columns(table, schema=schema)}
+    existing = {c["name"] for c in inspector.get_columns(table, schema=resolve_schema(engine, schema))}
     return [f for f in fields if f not in existing]

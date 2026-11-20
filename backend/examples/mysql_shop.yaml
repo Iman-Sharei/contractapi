@@ -1,0 +1,28 @@
+# MySQL: same contract as Postgres. Run `python examples/seed_demo.py <url>` for the demo tables.
+database:
+  url: mysql://demo:demo@localhost:3307/app   # driver is inferred from the URL (mysql)
+app:
+  title: Shop API (MySQL)
+  version: 1.0.0
+  read_only: true
+  auth: api_key
+  api_prefix: /v1
+endpoints:
+  - name: customers
+    path: /customers
+    table: customers
+    schema: app            # on MySQL the schema is the database name
+    fields: [id, name, email, created_at]
+    filters: [name, email]
+    sortable: [id, name]
+    pagination: {mode: offset, default_limit: 20, max_limit: 100}
+  - name: order_totals
+    path: /order-totals
+    sql: |
+      SELECT c.id, c.name, COUNT(o.id) AS order_count, COALESCE(SUM(o.total), 0) AS spent
+      FROM customers c LEFT JOIN orders o ON o.customer_id = c.id
+      WHERE o.status <> 'cancelled' OR o.id IS NULL
+      GROUP BY c.id, c.name
+    fields: [id, name, order_count, spent]
+    sortable: [id, spent]
+    pagination: {mode: offset}

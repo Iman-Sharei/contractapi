@@ -111,12 +111,18 @@ def _sql_param_placeholder(type_name: str) -> Any:
 def introspect(database_url: str, schema: str = "public") -> list[dict[str, Any]]:
     try:
         tables = introspect_schema(database_url, schema=schema)
+    except AppError:
+        raise
     except Exception as exc:
         raise AppError(
             type_="https://contractapi.dev/problems/database-unreachable",
             title="Database unreachable",
             status=400,
-            detail=f"Could not connect to the database: {safe_db_message(exc)}",
+            detail=(
+                f"Could not connect to the database: {safe_db_message(exc)}. Check the server "
+                "address, port, user name and password, and that the database accepts "
+                "connections from this server."
+            ),
         ) from exc
     return [t.to_dict() for t in tables]
 

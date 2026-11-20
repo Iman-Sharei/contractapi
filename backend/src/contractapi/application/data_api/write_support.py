@@ -23,6 +23,7 @@ from contractapi.domain.models.spec import (
     ApiSpec,
     EndpointSpec,
 )
+from contractapi.infrastructure.db.dialects import insert_returning
 from contractapi.infrastructure.db.errors import db_error
 from contractapi.infrastructure.idempotency import (
     IdempotentRecord,
@@ -226,22 +227,31 @@ def _bind_body(handler: Any, model: Any) -> None:
     handler.__annotations__["body"] = model
 
 
+CONFLICT_DETAIL = (
+    "Another record already uses one of these values (for example the same email; a deleted "
+    "record that is only hidden still counts), or a record it refers to does not exist."
+)
+IN_USE_DETAIL = (
+    "Other records still refer to this one (for example the orders of a customer). Delete or "
+    "move them first, or turn on soft delete for this endpoint."
+)
+
+
 def _created_location(endpoint: EndpointSpec, item_id: Any) -> str:
     # Relative reference (RFC 9110 §10.2.2): resolves against the collection URL under any mount.
     return f"{endpoint.path.rsplit('/', 1)[-1]}/{item_id}"
 
 
 def _do_insert(engine: Engine, table: Table, endpoint: EndpointSpec, payload: dict[str, Any]) -> dict[str, Any]:
-    stmt = table.insert().values(**payload).returning(*(table.c[f] for f in endpoint.fields))
     try:
         with engine.begin() as conn:
-            row = conn.execute(stmt).fetchone()
+            row = insert_returning(conn, table, payload, endpoint.fields, endpoint.primary_key)
     except IntegrityError as exc:
         raise AppError(
             type_="https://contractapi.dev/problems/conflict",
             title="Conflict",
             status=409,
-            detail="Insert violated a database constraint.",
+            detail=CONFLICT_DETAIL,
         ) from exc
     except SQLAlchemyError as exc:
         raise db_error(exc) from exc

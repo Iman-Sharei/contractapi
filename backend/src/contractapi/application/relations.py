@@ -10,6 +10,7 @@ from sqlalchemy import MetaData, text
 from sqlalchemy.engine import Connection, Engine
 
 from contractapi.domain.models.spec import RelationSpec, RelationType
+from contractapi.infrastructure.db.dialects import dialect_of, table_schema
 
 _IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
@@ -66,7 +67,7 @@ def _load_one_relation(
 
     select_fields = list(dict.fromkeys([*rel.fields, rel.foreign_key]))
     cols = ", ".join(_q(f) for f in select_fields)
-    schema = rel.schema_name
+    schema = table_schema(dialect_of(conn), rel.schema_name, database=conn.engine.url.database)
     if schema and schema not in {"main", ""}:
         table_sql = f"{_q(schema)}.{_q(rel.table)}"
     else:

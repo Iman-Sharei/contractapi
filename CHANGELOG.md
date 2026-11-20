@@ -4,6 +4,39 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### MySQL and SQL Server
+- New database types: **MySQL** (8.x, `pip install 'contractapi[mysql]'`) and **SQL Server**
+  (2019/2022, `pip install 'contractapi[sqlserver]'`, no ODBC needed). Every feature works the
+  same as on Postgres: tables, filters and `?q=` search, both paging styles, relations,
+  create / update / delete, soft delete, bulk, row-level access, custom SQL, aggregates, GraphQL
+- `database.driver` is inferred from the URL (`mysql://`, `mssql://`); a driver that does not
+  match the URL is rejected with a clear message
+- Studio wizard: choose PostgreSQL / MySQL / SQL Server; port, demo login and schema follow
+  (MySQL's schema is the database name, SQL Server's is `dbo`). The editor lists both types
+- Docker Compose profiles `mysql` and `sqlserver` with demo databases, plus
+  `examples/seed_demo.py` (same demo tables on any database) and example contracts
+- CI runs the same API tests against real PostgreSQL, MySQL and SQL Server
+
+### Fixes found while testing as a user
+- Custom SQL endpoints: get-by-id failed (500) for number ids on Postgres, and for any query
+  that has `:params`
+- `?sort=` was silently ignored on endpoints with next-page links; it now answers 400 with
+  what to change (page-number paging can sort by any allowed field). Studio says so too
+- Deleting a row that other rows still refer to answered 500; it is now 409 with an
+  explanation. Duplicate-value conflicts explain what happened
+- Opening a saved API reset its database type to Postgres in the editor, so saving a DuckDB
+  API changed its driver
+- GraphQL returned dates and decimals in a different format than REST; both now match
+- `?q=` search on number/date columns could miss matches on SQL Server (30-character cast)
+- New custom SQL endpoints get a hyphenated address (`/analytics/custom-query`)
+- The wizard could replace a name the user had already typed with a suggested `my_api_N`
+  when the server answered slowly
+- Web fonts load after the page, so a slow or blocked Google Fonts (company firewalls) no
+  longer delays Studio pages
+- "Database unreachable" shows the driver's own words (e.g. "Access denied for user …",
+  "Can't connect to MySQL server on …") instead of raw error codes and byte strings, plus
+  what to check next
+
 ### Studio redesign
 - New look: one design system (Inter / JetBrains Mono, indigo accent) with light and dark mode
   (follows the system, toggle in the sidebar); colours come from shared light/dark tokens

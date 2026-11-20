@@ -15,6 +15,7 @@ from contractapi.application.exports import (  # noqa: F401 — moved; re-export
 from contractapi.application.query_filters import escape_like
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import EndpointSpec
+from contractapi.infrastructure.db.dialects import POSTGRES, contains_sql
 
 _IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
@@ -35,6 +36,7 @@ def _build_where(
     endpoint: EndpointSpec,
     *,
     reserved: set[str],
+    dialect: str = POSTGRES,
 ) -> tuple[str, dict[str, Any]]:
     clauses: list[str] = []
     params: dict[str, Any] = {}
@@ -78,10 +80,10 @@ def _build_where(
             clauses.append(f"{col} <= :{pname}")
             params[pname] = value
         elif op == "contains":
-            clauses.append(f"CAST({col} AS TEXT) ILIKE :{pname} ESCAPE '\\'")
+            clauses.append(contains_sql(dialect, col, pname))
             params[pname] = f"%{escape_like(value)}%"
         elif op == "startswith":
-            clauses.append(f"CAST({col} AS TEXT) ILIKE :{pname} ESCAPE '\\'")
+            clauses.append(contains_sql(dialect, col, pname))
             params[pname] = f"{escape_like(value)}%"
         elif op == "in":
             values = [v for v in value.split(",") if v != ""]

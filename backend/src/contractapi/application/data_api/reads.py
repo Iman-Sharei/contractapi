@@ -10,7 +10,7 @@ from sqlalchemy import MetaData, Table, asc, desc, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from contractapi.application.cursor_paging import decode_cursor, encode_cursor
+from contractapi.application.cursor_paging import check_cursor_sort, decode_cursor, encode_cursor
 from contractapi.application.data_api.common import (
     _bind_path_type,
     _cache_prefix,
@@ -151,6 +151,7 @@ def _add_list(
         total = None
 
         if mode == PaginationMode.CURSOR:
+            check_cursor_sort(sort, endpoint.primary_key)
             pk_col = table.c[endpoint.primary_key]
             stmt = stmt.order_by(asc(pk_col))
             if cursor:

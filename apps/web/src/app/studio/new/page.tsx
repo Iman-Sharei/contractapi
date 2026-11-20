@@ -5,7 +5,15 @@ import { activateSpec, introspectDatabase, listSpecs, saveSpec, validateSpec } f
 import { ConnectStep } from "@/components/studio/wizard/ConnectStep";
 import { PickStep } from "@/components/studio/wizard/PickStep";
 import { PublishStep } from "@/components/studio/wizard/PublishStep";
-import { DEMO_PG, buildPgUrl, missingPgFields, parsePgUrl, type PgFields } from "@/lib/dbUrl";
+import {
+  SERVER_DBS,
+  buildDbUrl,
+  defaultSchema,
+  missingDbFields,
+  parseDbUrl,
+  type DbFields,
+  type ServerDb,
+} from "@/lib/dbUrl";
 import { DEFAULT_API_VERSION, WRITE_METHODS } from "@/lib/labels";
 import { defaultPath } from "@/lib/pathRules";
 import { defaultSafeColumns, ensurePrimaryKey } from "@/lib/pickColumns";
@@ -39,7 +47,8 @@ export default function NewApiWizardPage() {
 
   const [apiName, setApiName] = useState("my_api");
   const [existingNames, setExistingNames] = useState<string[]>([]);
-  const [fields, setFields] = useState<PgFields>(DEMO_PG);
+  const [dbKind, setDbKind] = useState<ServerDb>("postgres");
+  const [fields, setFields] = useState<DbFields>(SERVER_DBS[0].demo);
   const [useUrl, setUseUrl] = useState(false);
   const [pastedUrl, setPastedUrl] = useState("");
   const [schema, setSchema] = useState("public");
@@ -62,7 +71,8 @@ export default function NewApiWizardPage() {
         if (names.includes("my_api")) {
           let i = 2;
           while (names.includes(`my_api_${i}`)) i++;
-          setApiName(`my_api_${i}`);
+          // Only replace the untouched default: never overwrite a name the user already typed.
+          setApiName((cur) => (cur === "my_api" ? `my_api_${i}` : cur));
         }
       })
       .catch(() => setExistingNames([]));
@@ -70,7 +80,12 @@ export default function NewApiWizardPage() {
 
   const slug = slugify(apiName);
   const nameTaken = existingNames.includes(slug);
-  const dbUrl = useUrl ? pastedUrl : buildPgUrl(fields);
+  const parsedUrl = useUrl ? parseDbUrl(pastedUrl) : null;
+  const kind: ServerDb = useUrl ? (parsedUrl?.kind ?? dbKind) : dbKind;
+  const dbUrl = useUrl ? pastedUrl : buildDbUrl(dbKind, fields);
+  // MySQL has no schemas inside a database: the schema is the database itself.
+  const effectiveSchema =
+    kind === "mysql" ? defaultSchema("mysql", (useUrl ? parsedUrl?.fields.database : fields.database) ?? "") : schema;
   const prefix = apiPrefix.trim() ? `/${apiPrefix.trim().replace(/^\/+|\/+$/g, "")}` : "";
 
   const pickedKeys = useMemo(
@@ -108,7 +123,7 @@ export default function NewApiWizardPage() {
       });
     }
     return {
-      database: { url: dbUrl, driver: "postgres" },
+      database: { url: dbUrl, driver: kind },
       app: {
         title,
         version: DEFAULT_API_VERSION,
@@ -134,7 +149,7 @@ export default function NewApiWizardPage() {
       },
       endpoints,
     };
-  }, [pickedKeys, pickedColumns, tables, dbUrl, title, allowWrites, auth, prefix]);
+  }, [pickedKeys, pickedColumns, tables, dbUrl, kind, title, allowWrites, auth, prefix]);
 
   function goStep(i: number) {
     if (i > 0 && tables.length === 0) {
@@ -153,12 +168,15 @@ export default function NewApiWizardPage() {
   function onConnect() {
     setError(null);
     if (useUrl) {
-      if (!parsePgUrl(pastedUrl)) {
-        setError("That doesn't look like a Postgres URL (postgresql://user:password@host:5432/db).");
+      if (!parsedUrl) {
+        setError(
+          "That doesn't look like a database URL. Examples: postgresql://user:password@host:5432/db, " +
+            "mysql://user:password@host:3306/db, mssql://user:password@host:1433/db.",
+        );
         return;
       }
     } else {
-      const missing = missingPgFields(fields);
+      const missing = missingDbFields(fields);
       if (missing.length) {
         setError(`Please fill in the ${missing.join(", ")}.`);
         return;
@@ -166,7 +184,7 @@ export default function NewApiWizardPage() {
     }
     startTransition(async () => {
       try {
-        const result = await introspectDatabase(dbUrl, schema);
+        const result = await introspectDatabase(dbUrl, effectiveSchema);
         setTables(result.tables);
         const next: Record<string, string[]> = {};
         for (const t of result.tables) next[tableKey(t)] = defaultSafeColumns(t);
@@ -187,12 +205,24 @@ export default function NewApiWizardPage() {
   function setUseUrlMode(next: boolean) {
     if (next === useUrl) return;
     // Carry what the user already typed across the two input styles.
-    if (next) setPastedUrl(buildPgUrl(fields));
-    else {
-      const parsed = parsePgUrl(pastedUrl);
-      if (parsed) setFields(parsed);
+    if (next) setPastedUrl(buildDbUrl(dbKind, fields));
+    else if (parsedUrl) {
+      setDbKind(parsedUrl.kind);
+      setFields(parsedUrl.fields);
     }
     setUseUrl(next);
+  }
+
+  function changeKind(next: ServerDb) {
+    if (next === dbKind) return;
+    const before = SERVER_DBS.find((d) => d.value === dbKind)!.demo;
+    const after = SERVER_DBS.find((d) => d.value === next)!.demo;
+    // Untouched demo values switch to the new database's demo; typed values are kept
+    // (only a default port follows the database type).
+    const untouched = (Object.keys(before) as (keyof DbFields)[]).every((k) => fields[k] === before[k]);
+    setFields(untouched ? after : { ...fields, port: fields.port === before.port ? after.port : fields.port });
+    if (schema === defaultSchema(dbKind, fields.database)) setSchema(defaultSchema(next, after.database));
+    setDbKind(next);
   }
 
   function toggleTable(key: string, table: TableInfo) {
@@ -303,12 +333,15 @@ export default function NewApiWizardPage() {
         <ConnectStep
           fields={fields}
           setField={(k, v) => setFields((f) => ({ ...f, [k]: v }))}
+          kind={dbKind}
+          setKind={changeKind}
           useUrl={useUrl}
           setUseUrl={setUseUrlMode}
           dbUrl={pastedUrl}
           setDbUrl={setPastedUrl}
           schema={schema}
           setSchema={setSchema}
+          fixedSchema={kind === "mysql" ? effectiveSchema : null}
           apiName={apiName}
           setApiName={setApiName}
           slug={slug}

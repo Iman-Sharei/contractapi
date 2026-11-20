@@ -206,6 +206,12 @@ export function ContractTab({ s }: { s: EditorState }) {
         </div>
         <div>
           <h3>Can sort by</h3>
+          {(endpoint.pagination?.mode ?? "cursor") === "cursor" && (
+            <p className={styles.hint}>
+              Next-page links always return rows in {endpoint.primary_key} order. Switch “Paging
+              style” to page numbers to let callers sort by these fields.
+            </p>
+          )}
           <div className={styles.allowlist}>
             {endpoint.fields.map((f) => (
               <button

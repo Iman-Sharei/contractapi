@@ -52,15 +52,56 @@ from contractapi.domain.models.rules import (
 
 class DatabaseDriver(str, Enum):
     POSTGRES = "postgres"
+    MYSQL = "mysql"
+    SQLSERVER = "sqlserver"
     DUCKDB = "duckdb"
     SNOWFLAKE = "snowflake"
     BIGQUERY = "bigquery"
 
 
+# URL scheme → driver, so `driver:` can be left out of the YAML.
+_SCHEME_DRIVER = {
+    "postgres": DatabaseDriver.POSTGRES,
+    "postgresql": DatabaseDriver.POSTGRES,
+    "mysql": DatabaseDriver.MYSQL,
+    "mariadb": DatabaseDriver.MYSQL,
+    "mssql": DatabaseDriver.SQLSERVER,
+    "sqlserver": DatabaseDriver.SQLSERVER,
+    "duckdb": DatabaseDriver.DUCKDB,
+    "snowflake": DatabaseDriver.SNOWFLAKE,
+    "bigquery": DatabaseDriver.BIGQUERY,
+}
+
+
+def driver_from_url(url: str) -> DatabaseDriver | None:
+    scheme = url.split("://", 1)[0].split("+", 1)[0].lower() if "://" in url else ""
+    return _SCHEME_DRIVER.get(scheme)
+
+
 class DatabaseConfig(BaseModel):
     url: str = Field(min_length=1)
-    # postgres | duckdb | snowflake | bigquery (warehouse drivers need optional extras)
+    # postgres | mysql | sqlserver | duckdb | snowflake | bigquery (all but postgres need an extra).
+    # Inferred from the URL scheme when omitted.
     driver: DatabaseDriver = DatabaseDriver.POSTGRES
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_driver(cls, data: Any) -> Any:
+        if isinstance(data, dict) and not data.get("driver") and isinstance(data.get("url"), str):
+            inferred = driver_from_url(data["url"])
+            if inferred is not None:
+                return {**data, "driver": inferred}
+        return data
+
+    @model_validator(mode="after")
+    def driver_matches_url(self) -> DatabaseConfig:
+        inferred = driver_from_url(self.url)
+        if inferred is not None and inferred != self.driver:
+            raise ValueError(
+                f"database.driver is '{self.driver.value}' but the URL is a "
+                f"{inferred.value} URL. Make them match (or leave driver out)."
+            )
+        return self
 
 
 class AppConfig(BaseModel):

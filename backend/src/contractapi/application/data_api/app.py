@@ -46,6 +46,7 @@ from contractapi.domain.models.spec import (
     HttpMethod,
 )
 from contractapi.infrastructure.db.engine import create_engine_for_config
+from contractapi.infrastructure.db.introspect import resolve_schema
 from contractapi.infrastructure.idempotency import (
     idempotency_store,
 )
@@ -282,7 +283,7 @@ def _mount_endpoint(
     table = Table(
         endpoint.table,
         metadata,
-        schema=endpoint.schema_name,
+        schema=resolve_schema(engine, endpoint.schema_name),
         autoload_with=engine,
     )
     missing = [f for f in endpoint.fields if f not in table.c]

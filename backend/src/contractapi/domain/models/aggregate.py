@@ -143,12 +143,14 @@ def _quote_agg_ident(name: str) -> str:
     return f'"{name}"'
 
 
-def _agg_metric_expr(metric: AggregateMetric) -> str:
+def _agg_metric_expr(metric: AggregateMetric, dialect: str = "postgresql") -> str:
     if metric.op == AggregateOp.COUNT:
         return f"COUNT({_quote_agg_ident(metric.field)})" if metric.field else "COUNT(*)"
     if metric.op == AggregateOp.SUM:
         return f"SUM({_quote_agg_ident(metric.field)})"
     if metric.op == AggregateOp.AVG:
+        if dialect == "mssql":  # SQL Server's AVG of whole numbers would drop the decimals
+            return f"AVG(CAST({_quote_agg_ident(metric.field)} AS FLOAT))"
         return f"AVG({_quote_agg_ident(metric.field)})"
     if metric.op == AggregateOp.MIN:
         return f"MIN({_quote_agg_ident(metric.field)})"
@@ -167,10 +169,12 @@ def _agg_cmp(op: str, left: str, right_sql: str) -> str:
     return f"{left} {mapping[op]} {right_sql}"
 
 
-def _literal(value: Any) -> str:
+def _literal(value: Any, dialect: str = "postgresql") -> str:
     if value is None:
         return "NULL"
     if isinstance(value, bool):
+        if dialect == "mssql":  # no TRUE/FALSE literals; bit columns compare with 1/0
+            return "1" if value else "0"
         return "TRUE" if value else "FALSE"
     if isinstance(value, (int, float)):
         return str(value)
@@ -206,11 +210,13 @@ def _window_expr(window: AggregateWindow) -> str:
     return f"{fn} OVER ({over})" if over else f"{fn} OVER ()"
 
 
-def compile_aggregate_sql(agg: AggregateConfig) -> str:
+def compile_aggregate_sql(agg: AggregateConfig, *, dialect: str = "postgresql") -> str:
+    """SQL for an aggregate endpoint. `dialect` is a SQLAlchemy dialect name; it only changes
+    boolean literals and AVG on SQL Server (schema mapping happens at mount time)."""
     select_parts: list[str] = [_quote_agg_ident(c) for c in agg.group_by]
     for metric in agg.metrics:
         select_parts.append(
-            f"{_agg_metric_expr(metric)} AS {_quote_agg_ident(metric.name)}"
+            f"{_agg_metric_expr(metric, dialect)} AS {_quote_agg_ident(metric.name)}"
         )
     for window in agg.windows:
         select_parts.append(
@@ -228,10 +234,10 @@ def compile_aggregate_sql(agg: AggregateConfig) -> str:
             col = _quote_agg_ident(flt.field)
             if flt.op == "in":
                 values = flt.value if isinstance(flt.value, list) else [flt.value]
-                lit = ", ".join(_literal(v) for v in values)
+                lit = ", ".join(_literal(v, dialect) for v in values)
                 wheres.append(f"{col} IN ({lit})")
             else:
-                wheres.append(_agg_cmp(flt.op, col, _literal(flt.value)))
+                wheres.append(_agg_cmp(flt.op, col, _literal(flt.value, dialect)))
         sql += " WHERE " + " AND ".join(wheres)
     if agg.group_by:
         sql += f" GROUP BY {', '.join(_quote_agg_ident(c) for c in agg.group_by)}"
@@ -239,8 +245,8 @@ def compile_aggregate_sql(agg: AggregateConfig) -> str:
         havings: list[str] = []
         for h in agg.having:
             metric = next(m for m in agg.metrics if m.name == h.metric)
-            left = _agg_metric_expr(metric)
-            havings.append(_agg_cmp(h.op, left, _literal(h.value)))
+            left = _agg_metric_expr(metric, dialect)
+            havings.append(_agg_cmp(h.op, left, _literal(h.value, dialect)))
         sql += " HAVING " + " AND ".join(havings)
     return sql
 

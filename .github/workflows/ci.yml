@@ -72,6 +72,68 @@ jobs:
           python -m build
           twine check dist/*
 
+  databases:
+    # The same API tests against real PostgreSQL, MySQL and SQL Server.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: app
+          MYSQL_USER: demo
+          MYSQL_PASSWORD: demo
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -udemo -pdemo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+      sqlserver:
+        # Developer edition, test-only; the image requires accepting Microsoft's licence.
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: Demo_pass_2024!
+        ports:
+          - 1434:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Demo_pass_2024! -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev,graphql,mysql,sqlserver]"
+      - name: Same tests on every database
+        env:
+          MDB_REQUIRE_ALL: "1"
+        run: pytest -q --tb=short tests/test_multi_database.py
+
   web:
     runs-on: ubuntu-latest
     defaults:

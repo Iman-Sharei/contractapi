@@ -8,12 +8,17 @@ import styles from "./editor.module.css";
 
 const URL_LABEL: Record<DatabaseDriver, string> = {
   postgres: "Connection URL",
+  mysql: "Connection URL",
+  sqlserver: "Connection URL",
   duckdb: "DuckDB URL",
   snowflake: "Snowflake URL",
   bigquery: "BigQuery URL",
 };
 
 const URL_PLACEHOLDER: Partial<Record<DatabaseDriver, string>> = {
+  postgres: "postgresql://user:password@host:5432/database",
+  mysql: "mysql://user:password@host:3306/database",
+  sqlserver: "mssql://user:password@host:1433/database",
   duckdb: "duckdb:///:memory: or duckdb:///./file.duckdb",
   snowflake: "snowflake://user:pass@account/db/schema",
   bigquery: "bigquery://project/dataset",
@@ -38,7 +43,9 @@ export function ConnectionCard({ s }: { s: EditorState }) {
           <label>
             Database type
             <select value={dbDriver} onChange={(e) => onDriverChange(e.target.value as DatabaseDriver)}>
-              <option value="postgres">Postgres</option>
+              <option value="postgres">PostgreSQL</option>
+              <option value="mysql">MySQL</option>
+              <option value="sqlserver">SQL Server</option>
               <option value="duckdb">DuckDB</option>
               <option value="snowflake">Snowflake</option>
               <option value="bigquery">BigQuery</option>
@@ -63,6 +70,8 @@ export function ConnectionCard({ s }: { s: EditorState }) {
           <label>
             Schema
             <input value={schema} onChange={(e) => setSchema(e.target.value)} disabled={dbDriver === "duckdb"} />
+            {dbDriver === "mysql" && <Hint>On MySQL this is the database name.</Hint>}
+            {dbDriver === "sqlserver" && <Hint>Usually dbo.</Hint>}
           </label>
           <label>
             Who can use it?

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -10,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from contractapi.application.cursor_paging import decode_cursor, encode_cursor
+from contractapi.application.cursor_paging import check_cursor_sort, decode_cursor, encode_cursor
 from contractapi.application.exports import (
     _csv_response,
     _ndjson_response,
@@ -23,6 +24,14 @@ from contractapi.application.sql_filters import (
 )
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, EndpointSpec, PaginationMode
+from contractapi.infrastructure.db.dialects import (
+    MSSQL,
+    as_text_sql,
+    dialect_of,
+    first_row_sql,
+    no_rows_sql,
+    page_sql,
+)
 from contractapi.infrastructure.db.errors import db_error
 
 
@@ -34,7 +43,28 @@ def begin_read_only(conn: Any) -> None:
         conn.execute(text("SET TRANSACTION READ ONLY"))
 
 
-def _inner_sql(endpoint: EndpointSpec) -> str:
+def _has_top_level_order_by(sql: str) -> bool:
+    """ORDER BY outside parentheses (SQL Server rejects it inside a derived table)."""
+    depth, flat = 0, []
+    for ch in sql:
+        depth += ch == "("
+        flat.append(ch if depth == 0 else " ")
+        depth -= ch == ")"
+    return bool(re.search(r"\border\s+by\b", "".join(flat), re.IGNORECASE))
+
+
+def _inner_sql(endpoint: EndpointSpec, engine: Engine | None = None) -> str:
+    """The endpoint's SELECT. Aggregates are recompiled for the engine's database
+    (default schema, boolean literals, AVG)."""
+    if endpoint.aggregate is not None and engine is not None:
+        from contractapi.domain.models.aggregate import compile_aggregate_sql
+        from contractapi.infrastructure.db.introspect import resolve_schema
+
+        dialect = dialect_of(engine)
+        if dialect != "postgresql":
+            schema = resolve_schema(engine, endpoint.aggregate.schema_name) or ""
+            agg = endpoint.aggregate.model_copy(update={"schema_name": schema})
+            return compile_aggregate_sql(agg, dialect=dialect)
     return (endpoint.sql or "").strip().rstrip(";").strip()
 
 
@@ -53,7 +83,13 @@ def mount_sql_endpoint(
     reserved = {"limit", "offset", "sort", "cursor", "include_total", "fields", "format"}
     reserved |= {p.name for p in endpoint.sql_params}
     select_list = ", ".join(f"q.{_quote_ident(f)}" for f in endpoint.fields)
-    inner = _inner_sql(endpoint)
+    dialect = dialect_of(engine)
+    inner = _inner_sql(endpoint, engine)
+    if dialect == MSSQL and _has_top_level_order_by(inner):
+        raise ValueError(
+            f"Endpoint '{endpoint.name}': on SQL Server the query cannot end with ORDER BY "
+            "(the API adds sorting and paging itself). Remove the ORDER BY and use 'sortable'."
+        )
 
     def list_items(
         request: Request,
@@ -69,10 +105,12 @@ def mount_sql_endpoint(
             limit, offset, cursor = max_limit, 0, None
 
         sql_bind = bind_sql_params(endpoint, request)
-        where_sql, params = _build_where(request, endpoint, reserved=reserved)
+        where_sql, params = _build_where(request, endpoint, reserved=reserved, dialect=dialect)
         params.update(sql_bind)
         mode = endpoint.pagination.mode
         order_sql = f" ORDER BY q.{_quote_ident(endpoint.primary_key)} ASC"
+        if mode == PaginationMode.CURSOR:
+            check_cursor_sort(sort, endpoint.primary_key)
         if sort and mode != PaginationMode.CURSOR:
             descending = sort.startswith("-")
             col = sort[1:] if descending else sort
@@ -101,10 +139,9 @@ def mount_sql_endpoint(
 
         base = f"SELECT {select_list} FROM ({inner}) AS q{where_sql}{order_sql}"
         fetch_limit = limit + 1 if mode == PaginationMode.CURSOR else limit
-        page_sql = f"{base} LIMIT :_limit"
+        paged_sql = base + page_sql(dialect, offset=mode != PaginationMode.CURSOR)
         params["_limit"] = fetch_limit
         if mode != PaginationMode.CURSOR:
-            page_sql += " OFFSET :_offset"
             params["_offset"] = offset
 
         total = None
@@ -112,12 +149,14 @@ def mount_sql_endpoint(
             with engine.connect() as conn:
                 begin_read_only(conn)
                 if include_total or mode != PaginationMode.CURSOR:
-                    where_only, filter_params = _build_where(request, endpoint, reserved=reserved)
+                    where_only, filter_params = _build_where(
+                        request, endpoint, reserved=reserved, dialect=dialect
+                    )
                     count_sql = f"SELECT COUNT(*) FROM ({inner}) AS q{where_only}"
                     total = int(
                         conn.execute(text(count_sql), {**filter_params, **sql_bind}).scalar_one()
                     )
-                rows = conn.execute(text(page_sql), params).mappings().all()
+                rows = conn.execute(text(paged_sql), params).mappings().all()
         except SQLAlchemyError as exc:
             raise db_error(exc) from exc
 
@@ -182,14 +221,19 @@ def mount_sql_endpoint(
 
     def get_item(request: Request, item_id: Any) -> Any:
         fields = dab._visible_fields(spec, endpoint, request)
-        sql = (
+        sql = first_row_sql(
+            dialect,
+            # The id from the URL is text; compare as text so integer keys work too.
             f"SELECT {select_list} FROM ({inner}) AS q "
-            f"WHERE q.{_quote_ident(pk)} = :id LIMIT 1"
+            f"WHERE {as_text_sql(dialect, f'q.{_quote_ident(pk)}')} = :_id",
+            f"q.{_quote_ident(pk)}",
         )
         try:
             with engine.connect() as conn:
                 begin_read_only(conn)
-                row = conn.execute(text(sql), {"id": item_id}).mappings().first()
+                # The query's own :params (defaults or ?name=value) apply to the detail too.
+                params = {**bind_sql_params(endpoint, request), "_id": item_id}
+                row = conn.execute(text(sql), params).mappings().first()
         except SQLAlchemyError as exc:
             raise db_error(exc) from exc
         if row is None:
@@ -233,7 +277,7 @@ def preview_sql_columns(
 
     _assert_safe_select(sql, endpoint_name="preview")
     inner = sql.strip().rstrip(";").strip()
-    q = text(f"SELECT * FROM ({inner}) AS q LIMIT 0")
+    q = text(no_rows_sql(dialect_of(engine), inner))
     with engine.connect() as conn:
         begin_read_only(conn)
         result = conn.execute(q, bind or {})

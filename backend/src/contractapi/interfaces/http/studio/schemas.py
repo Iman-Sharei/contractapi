@@ -66,7 +66,7 @@ class SqlPreviewRequest(BaseModel):
     sql: str = Field(min_length=1)
     driver: str = Field(
         default="postgres",
-        description="postgres | duckdb | snowflake | bigquery",
+        description="postgres | mysql | sqlserver | duckdb | snowflake | bigquery",
     )
 
 

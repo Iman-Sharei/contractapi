@@ -1,0 +1,27 @@
+# SQL Server: same contract as Postgres. Run `python examples/seed_demo.py <url>` for the demo tables.
+database:
+  url: "mssql://sa:${secret:sqlserver-demo}@localhost:1434/master"   # driver inferred (sqlserver)
+app:
+  title: Shop API (SQL Server)
+  version: 1.0.0
+  read_only: true
+  auth: api_key
+  api_prefix: /v1
+endpoints:
+  - name: customers
+    path: /customers
+    table: customers
+    schema: dbo
+    fields: [id, name, email, created_at]
+    filters: [name, email]
+    sortable: [id, name]
+  - name: order_stats
+    path: /order-stats
+    aggregate:
+      table: orders
+      schema: dbo
+      group_by: [status]
+      metrics:
+        - {name: orders, op: count}
+        - {name: average_total, op: avg, field: total}
+    pagination: {mode: offset}

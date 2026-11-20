@@ -17,6 +17,8 @@ export const emptyJwt = () => ({
 });
 
 export const PG_DEFAULT_URL = "postgresql://postgres:postgres@db:5432/app";
+export const MYSQL_DEFAULT_URL = "mysql://demo:demo@mysql:3306/app";
+export const SQLSERVER_DEFAULT_URL = "mssql://sa:Demo_pass_2024!@sqlserver:1433/master";
 export const DUCKDB_DEFAULT_URL = "duckdb:///:memory:";
 export const SNOWFLAKE_DEFAULT_URL = "snowflake://USER:PASSWORD@ACCOUNT/DB/SCHEMA?warehouse=WH";
 export const BIGQUERY_DEFAULT_URL = "bigquery://project/dataset";
@@ -168,6 +170,7 @@ export function useEditorCore({
         skipDirty.current = true;
         setSpec(loaded.spec);
         setDbUrl(loaded.spec.database.url);
+        setDbDriver(loaded.spec.database.driver ?? "postgres");
         setSpecName(initialName);
         const first = loaded.spec.endpoints[0] ?? null;
         setActiveEndpoint(first?.name ?? null);

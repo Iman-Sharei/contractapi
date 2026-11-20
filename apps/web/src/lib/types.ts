@@ -164,7 +164,7 @@ export type EndpointDraft = {
   parquet_export?: boolean;
 };
 
-export type DatabaseDriver = "postgres" | "duckdb" | "snowflake" | "bigquery";
+export type DatabaseDriver = "postgres" | "mysql" | "sqlserver" | "duckdb" | "snowflake" | "bigquery";
 
 export type ApiSpecDraft = {
   database: { url: string; driver?: DatabaseDriver };

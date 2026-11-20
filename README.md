@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-3776AB)](backend/pyproject.toml)
 
-**Spec-first Postgres → FastAPI**, with a Next.js Studio.
+**Spec-first PostgreSQL / MySQL / SQL Server → FastAPI**, with a Next.js Studio.
 
 **Maturity: Beta (`0.6.1`)** — see [docs/STABILITY.md](docs/STABILITY.md).  
 PyPI: `pip install contractapi` (import name `contractapi`).
@@ -12,7 +12,7 @@ PyPI: `pip install contractapi` (import name `contractapi`).
 You design the API contract. The database is only the source — never the public surface.
 
 ```
-PostgreSQL / DuckDB ──introspect──► Studio / YAML ──activate──► FastAPI /data + /apis/{name}
+PostgreSQL / MySQL / SQL Server / DuckDB ──introspect──► Studio / YAML ──activate──► FastAPI /data + /apis/{name}
                                                               (+ OpenAPI, optional /graphql)
 ```
 
@@ -32,6 +32,16 @@ Security baselines: **OWASP API Top 10**, **RFC 9457**, **Zalando API guidelines
 # One-command local stack (API + Studio + Postgres + Redis)
 docker compose up -d --build
 # Studio http://localhost:3000 (sign in with STUDIO_API_KEY)  · API http://localhost:8000/docs
+```
+
+MySQL or SQL Server demo databases (optional; starting SQL Server accepts Microsoft's
+Developer licence, for development and testing only):
+
+```bash
+docker compose --profile mysql --profile sqlserver up -d mysql sqlserver
+docker compose exec api python examples/seed_demo.py mysql://demo:demo@mysql:3306/app
+docker compose exec api python examples/seed_demo.py 'mssql://sa:Demo_pass_2024!@sqlserver:1433/master'
+# then pick MySQL or SQL Server in Studio → New API (the demo logins are pre-filled)
 ```
 
 Or pip + Studio separately:

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Table, and_, select
+from sqlalchemy import Table, and_
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from contractapi.application.data_api.write_support import CONFLICT_DETAIL, IN_USE_DETAIL
 from contractapi.application.graphql_ops import (
     _apply_rbac,
     _claim_value,
@@ -19,6 +20,7 @@ from contractapi.application.graphql_ops import (
 from contractapi.application.validation_rules import validate_payload
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, EndpointSpec, HttpMethod
+from contractapi.infrastructure.db.dialects import insert_returning, update_returning
 from contractapi.infrastructure.security.auth import enforce_endpoint_roles
 
 
@@ -122,32 +124,14 @@ def _mutate_create(info: Any, name: str, data: dict[str, Any]) -> dict[str, Any]
     payload = _force_row_level(ep, principal, _filter_write_payload(ep, data), always=True)
     validate_payload(ep, payload)
     table = _load_table(engine, ep)
-    stmt = table.insert().values(**payload)
-    returning = [table.c[f] for f in ep.fields if f in table.c]
     result: dict[str, Any] | None = None
     try:
         with engine.begin() as conn:
-            if returning:
-                row = conn.execute(stmt.returning(*returning)).mappings().first()
-                if row is not None:
-                    result = {k: _jsonable(v) for k, v in dict(row).items()}
-            if result is None:
-                conn.execute(stmt)
-                # Fallback fetch by PK when RETURNING unsupported
-                pk = ep.primary_key
-                if pk in payload:
-                    cols = [table.c[f] for f in ep.fields if f in table.c]
-                    row = (
-                        conn.execute(select(*cols).where(table.c[pk] == payload[pk]))
-                        .mappings()
-                        .first()
-                    )
-                    if row:
-                        result = {k: _jsonable(v) for k, v in dict(row).items()}
-                if result is None:
-                    result = {k: _jsonable(v) for k, v in payload.items()}
+            fields = [f for f in ep.fields if f in table.c]
+            row = insert_returning(conn, table, payload, fields, ep.primary_key)
+            result = {k: _jsonable(v) for k, v in dict(row or payload).items()}
     except IntegrityError as exc:
-        raise ValueError("Insert violated a database constraint.") from exc
+        raise ValueError(CONFLICT_DETAIL) from exc
     except SQLAlchemyError as exc:
         raise ValueError(f"Database error: {exc.__class__.__name__}") from exc
     _after_write(spec, ep, principal, "create", result, result.get(ep.primary_key))
@@ -167,26 +151,16 @@ def _mutate_update(info: Any, name: str, item_id: Any, data: dict[str, Any]) -> 
     if pk not in table.c:
         raise ValueError(f"Primary key '{pk}' missing on table.")
     where = and_(table.c[pk] == item_id, *_row_filters(ep, table, principal))
-    returning = [table.c[f] for f in ep.fields if f in table.c]
     result: dict[str, Any] | None = None
     try:
         with engine.begin() as conn:
-            stmt = table.update().where(where).values(**payload)
-            if returning:
-                row = conn.execute(stmt.returning(*returning)).mappings().first()
-                if row is None:
-                    raise ValueError(f"{name} with {pk}={item_id} not found")
-                result = {k: _jsonable(v) for k, v in dict(row).items()}
-            else:
-                if conn.execute(stmt).rowcount == 0:
-                    raise ValueError(f"{name} with {pk}={item_id} not found")
-                cols = [table.c[f] for f in ep.fields if f in table.c]
-                row = conn.execute(select(*cols).where(where)).mappings().first()
-                if not row:
-                    raise ValueError(f"{name} with {pk}={item_id} not found")
-                result = {k: _jsonable(v) for k, v in dict(row).items()}
+            fields = [f for f in ep.fields if f in table.c]
+            row = update_returning(conn, table, where, payload, fields)
+            if row is None:
+                raise ValueError(f"{name} with {pk}={item_id} not found")
+            result = {k: _jsonable(v) for k, v in dict(row).items()}
     except IntegrityError as exc:
-        raise ValueError("Update violated a database constraint.") from exc
+        raise ValueError(CONFLICT_DETAIL) from exc
     except SQLAlchemyError as exc:
         raise ValueError(f"Database error: {exc.__class__.__name__}") from exc
     _after_write(spec, ep, principal, "update", result, item_id)
@@ -200,19 +174,22 @@ def _mutate_delete(info: Any, name: str, item_id: Any) -> dict[str, Any]:
     if pk not in table.c:
         raise ValueError(f"Primary key '{pk}' missing on table.")
     where = and_(table.c[pk] == item_id, *_row_filters(ep, table, principal))
-    with engine.begin() as conn:
-        if ep.soft_delete and ep.soft_delete.column in table.c:
-            from datetime import datetime, timezone
+    try:
+        with engine.begin() as conn:
+            if ep.soft_delete and ep.soft_delete.column in table.c:
+                from datetime import datetime, timezone
 
-            result = conn.execute(
-                table.update()
-                .where(where)
-                .values({ep.soft_delete.column: datetime.now(timezone.utc)})
-            )
-        else:
-            result = conn.execute(table.delete().where(where))
-        if result.rowcount == 0:
-            raise ValueError(f"{name} with {pk}={item_id} not found")
+                result = conn.execute(
+                    table.update()
+                    .where(where)
+                    .values({ep.soft_delete.column: datetime.now(timezone.utc)})
+                )
+            else:
+                result = conn.execute(table.delete().where(where))
+    except IntegrityError as exc:
+        raise ValueError(IN_USE_DETAIL) from exc
+    if result.rowcount == 0:
+        raise ValueError(f"{name} with {pk}={item_id} not found")
     _after_write(spec, ep, principal, "delete", {"id": _jsonable(item_id)}, item_id)
     return {"deleted": True, "id": _jsonable(item_id), "endpoint": name}
 

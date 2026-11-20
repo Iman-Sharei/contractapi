@@ -24,6 +24,8 @@ from contractapi.application.data_api.common import (
     _visible_fields,
 )
 from contractapi.application.data_api.write_support import (
+    CONFLICT_DETAIL,
+    IN_USE_DETAIL,
     _bind_body,
     _idempotency_begin,
     _idempotency_commit,
@@ -40,6 +42,7 @@ from contractapi.core.errors import (
 from contractapi.domain.models.spec import (
     HttpMethod,
 )
+from contractapi.infrastructure.db.dialects import update_returning
 from contractapi.infrastructure.db.errors import db_error
 from contractapi.infrastructure.webhooks import dispatch_webhooks
 
@@ -95,21 +98,15 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
         _check_if_match(request, _etag_for(current, endpoint))
 
         clauses = apply_security_clauses([table.c[pk] == item_id], table, endpoint, request)
-        stmt = (
-            table.update()
-            .where(combine(clauses))
-            .values(**payload)
-            .returning(*(table.c[f] for f in endpoint.fields))
-        )
         try:
             with engine.begin() as conn:
-                row = conn.execute(stmt).fetchone()
+                row = update_returning(conn, table, combine(clauses), payload, endpoint.fields)
         except IntegrityError as exc:
             raise AppError(
                 type_="https://contractapi.dev/problems/conflict",
                 title="Conflict",
                 status=409,
-                detail="Update violated a database constraint.",
+                detail=CONFLICT_DETAIL,
             ) from exc
         except SQLAlchemyError as exc:
             raise db_error(exc) from exc
@@ -209,6 +206,13 @@ def _add_delete(router, engine, table, endpoint, spec, tags) -> None:  # type: i
                     result = conn.execute(stmt)
                 else:
                     result = conn.execute(table.delete().where(where))
+        except IntegrityError as exc:
+            raise AppError(
+                type_="https://contractapi.dev/problems/conflict",
+                title="Conflict",
+                status=409,
+                detail=IN_USE_DETAIL,
+            ) from exc
         except SQLAlchemyError as exc:
             raise db_error(exc) from exc
         if result.rowcount == 0:

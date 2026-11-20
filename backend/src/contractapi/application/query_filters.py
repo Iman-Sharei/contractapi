@@ -13,7 +13,7 @@ from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import ColumnElement, String, Table, and_, cast, or_
+from sqlalchemy import ColumnElement, Table, Unicode, and_, cast, or_
 
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import EndpointSpec
@@ -98,7 +98,8 @@ def escape_like(value: str) -> str:
 
 
 def _like(col: Any, op: str, value: str) -> ColumnElement[Any]:
-    target = col if is_text_column(col) else cast(col, String)
+    # Unicode(4000): a bare VARCHAR cast is only 30 characters on SQL Server.
+    target = col if is_text_column(col) else cast(col, Unicode(4000))
     term = escape_like(value)
     pattern = f"{term}%" if op == "startswith" else f"%{term}%"
     return target.ilike(pattern, escape="\\")
