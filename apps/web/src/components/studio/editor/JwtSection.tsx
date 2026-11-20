@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "../studio.module.css";
+import styles from "./editor.module.css";
 import { emptyJwt, type EditorState } from "./useEditorState";
 
 export function JwtSection({ s }: { s: EditorState }) {

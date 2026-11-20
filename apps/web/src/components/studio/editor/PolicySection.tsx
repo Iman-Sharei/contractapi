@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "../studio.module.css";
+import styles from "./editor.module.css";
 import { type EditorState } from "./useEditorState";
 
 export function PolicySection({ s }: { s: EditorState }) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { SafetyChecklist } from "../SafetyChecklist";
-import styles from "../studio.module.css";
+import styles from "./editor.module.css";
 import { type EditorState } from "./useEditorState";
 import { AccessSection } from "./AccessSection";
 import { JwtSection } from "./JwtSection";

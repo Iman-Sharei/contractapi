@@ -1,12 +1,11 @@
 "use client";
 
-import { activateSpec, dumpYaml, getApiBase, introspectDatabase, issueToken, listSpecs, loadSpec, previewSql, saveSpec, tryDataRequest, validateSpec } from "@/lib/api";
-import type { DatabaseDriver } from "@/lib/types";
+import { activateSpec, dumpYaml, getApiBase, issueToken, previewSql, saveSpec, tryDataRequest, validateSpec } from "@/lib/api";
 import { LIVE_CHANGED_EVENT } from "@/lib/events";
-import { isWarehouseDriver, type EditorCore } from "./useEditorCore";
+import { type EditorCore } from "./useEditorCore";
 
 export function ioActions(c: EditorCore) {
-  const { dbUrl, setDbUrl, dbDriver, setDbDriver, setSchema, setTables, spec, setSpec, setActiveEndpoint, specName, setSpecName, setSavedNames, setMessage, setValidation, setEditorTab, setYamlText, startTransition, setDirty, skipDirty, playMethod, setPlayMethod, playPath, setPlayPath, playQuery, playBody, playBearer, setPlayBearer, playRoles, playExpiresMin, playClaims, setPlayResult, sqlDraft, endpoint, draftSpec, localYaml, setStatus, updateEndpoint } = c;
+  const { dbUrl, dbDriver, spec, specName, setValidation, setEditorTab, setYamlText, startTransition, setDirty, playMethod, setPlayMethod, playPath, setPlayPath, playQuery, playBody, playBearer, setPlayBearer, playRoles, playExpiresMin, playClaims, setPlayResult, sqlDraft, endpoint, draftSpec, localYaml, setStatus, updateEndpoint } = c;
 
   function onValidate() {
     setStatus(null);
@@ -52,64 +51,11 @@ export function ioActions(c: EditorCore) {
     startTransition(async () => {
       try {
         await saveSpec(specName, draftSpec);
-        const listed = await listSpecs();
-        setSavedNames(listed.specs.map((s) => s.name));
         setDirty(false);
+        window.dispatchEvent(new Event(LIVE_CHANGED_EVENT));
         setStatus(`Saved spec '${specName}'.`);
       } catch (e) {
         setStatus(null, e instanceof Error ? e.message : "Save failed");
-      }
-    });
-  }
-
-  function onLoad(name: string) {
-    setStatus(null);
-    startTransition(async () => {
-      try {
-        const loaded = await loadSpec(name);
-        skipDirty.current = true;
-        setSpec(loaded.spec);
-        setDbUrl(loaded.spec.database.url);
-        const rawDrv = loaded.spec.database.driver || "postgres";
-        const drv: DatabaseDriver =
-          rawDrv === "duckdb" || rawDrv === "snowflake" || rawDrv === "bigquery"
-            ? rawDrv
-            : "postgres";
-        setDbDriver(drv);
-        setSpecName(name);
-        setActiveEndpoint(loaded.spec.endpoints[0]?.name ?? null);
-        setDirty(false);
-        setStatus(`Loaded spec '${name}'.`);
-        const schemaHint = loaded.spec.endpoints[0]?.schema || "public";
-        if (isWarehouseDriver(drv)) {
-          setTables([]);
-          setMessage(`Loaded ${drv} spec '${name}' — use SQL/aggregate endpoints.`);
-          return;
-        }
-        try {
-          const intro = await introspectDatabase(loaded.spec.database.url, schemaHint);
-          setTables(intro.tables);
-          setSchema(schemaHint);
-        } catch (e) {
-          setMessage(
-            `Loaded spec '${name}' (introspect warning: ${
-              e instanceof Error ? e.message : "failed"
-            }).`,
-          );
-        }
-      } catch (e) {
-        setStatus(null, e instanceof Error ? e.message : "Load failed");
-      }
-    });
-  }
-
-  function refreshSaved() {
-    startTransition(async () => {
-      try {
-        const listed = await listSpecs();
-        setSavedNames(listed.specs.map((s) => s.name));
-      } catch {
-        /* ignore */
       }
     });
   }
@@ -215,5 +161,5 @@ export function ioActions(c: EditorCore) {
     });
   }
 
-  return { onValidate, onActivate, onSave, onLoad, refreshSaved, onDiscoverSql, onRefreshYaml, onTry };
+  return { onValidate, onActivate, onSave, onDiscoverSql, onRefreshYaml, onTry };
 }

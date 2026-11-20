@@ -2,6 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { Icon } from "@/components/ui/Icon";
+import { useConfirm, useToast } from "@/components/ui/feedback";
+import { Badge, Banner, Button, ButtonLink, EmptyState, PageHeader } from "@/components/ui/primitives";
+import { copyText } from "@/lib/copy";
 import {
   activateSpec,
   deactivateSpec,
@@ -13,7 +17,7 @@ import {
 } from "@/lib/api";
 import { AUTH_OPTIONS } from "@/lib/labels";
 import type { ActiveApiMount, SpecListItem } from "@/lib/types";
-import styles from "@/components/studio/flow.module.css";
+import styles from "@/components/studio/pages.module.css";
 
 function accessLabel(auth?: string) {
   return AUTH_OPTIONS.find((o) => o.value === auth)?.label.replace(" (recommended)", "") ?? "";
@@ -22,11 +26,12 @@ function accessLabel(auth?: string) {
 export default function StudioCatalogPage() {
   const [specs, setSpecs] = useState<SpecListItem[]>([]);
   const [live, setLive] = useState<ActiveApiMount[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const refresh = useCallback(() => {
     startTransition(async () => {
@@ -55,6 +60,7 @@ export default function StudioCatalogPage() {
   const liveNames = useMemo(() => new Set(live.map((m) => m.name)), [live]);
   const savedNames = useMemo(() => new Set(specs.map((s) => s.name)), [specs]);
   const liveWithoutDesign = live.filter((m) => !savedNames.has(m.name));
+  const endpointTotal = specs.reduce((n, s) => n + (s.endpoint_count ?? 0), 0);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -66,12 +72,11 @@ export default function StudioCatalogPage() {
   }, [specs, query]);
 
   function run(action: () => Promise<unknown>, ok: string) {
-    setMessage(null);
     setError(null);
     startTransition(async () => {
       try {
         await action();
-        setMessage(ok);
+        toast(ok);
         refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -85,65 +90,100 @@ export default function StudioCatalogPage() {
       await activateSpec(loaded.spec, name);
     }, `'${name}' is live.`);
 
-  const stop = (name: string) => {
-    if (!window.confirm(`Stop '${name}'? Callers will get an error until you make it live again.`)) return;
-    run(() => deactivateSpec(name), `'${name}' stopped.`);
-  };
+  async function stop(name: string) {
+    const ok = await confirm({
+      title: `Stop '${name}'?`,
+      body: "Callers get an error until you make it live again. Its design stays saved.",
+      confirmLabel: "Stop API",
+    });
+    if (ok) run(() => deactivateSpec(name), `'${name}' stopped.`);
+  }
 
-  const stopAll = () => {
-    if (!window.confirm("Stop every live API?")) return;
-    run(() => deactivateSpec(), "All APIs stopped.");
-  };
+  async function stopAll() {
+    const ok = await confirm({
+      title: "Stop every live API?",
+      body: `${live.length} API${live.length === 1 ? "" : "s"} will stop answering requests. Saved designs are kept.`,
+      confirmLabel: "Stop all",
+    });
+    if (ok) run(() => deactivateSpec(), "All APIs stopped.");
+  }
 
-  const remove = (name: string) => {
-    if (!window.confirm(`Delete '${name}'? It is stopped and its saved design removed.`)) return;
+  async function remove(name: string) {
+    const ok = await confirm({
+      title: `Delete '${name}'?`,
+      body: "It stops answering requests and its saved design is removed. This can't be undone.",
+      confirmLabel: "Delete API",
+    });
+    if (!ok) return;
     run(async () => {
       if (liveNames.has(name)) await deactivateSpec(name);
       await deleteSpec(name);
     }, `Deleted '${name}'.`);
-  };
+  }
+
+  async function copyAddress(url: string) {
+    toast((await copyText(url)) ? "Address copied." : "Could not copy.", "success");
+  }
 
   return (
     <>
-      <section className={styles.heroBlock}>
-        <p className={styles.kicker}>Studio</p>
-        <h1 className={styles.title}>My APIs</h1>
-        <p className={styles.lede}>
-          Every API you designed. <strong>Live</strong> APIs answer requests at their address;{" "}
-          <strong>drafts</strong> are saved but not running.
-        </p>
-        <div className={styles.toolbar}>
-          <Link className={styles.primary} href="/studio/new">
-            New API
-          </Link>
-          <Link className={styles.secondary} href="/studio/diff">
-            Compare versions
-          </Link>
-          <button type="button" className={styles.ghost} onClick={refresh} disabled={pending}>
-            Refresh
-          </button>
-          {live.length > 0 && (
-            <button type="button" className={styles.danger} onClick={stopAll} disabled={pending}>
-              Stop all
-            </button>
-          )}
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="Studio"
+        title="My APIs"
+        description={
+          <>
+            Every API you designed. <strong>Live</strong> APIs answer requests at their address;{" "}
+            <strong>drafts</strong> are saved but not running.
+          </>
+        }
+        actions={
+          <>
+            <Button variant="ghost" icon="refresh" onClick={refresh} disabled={pending} aria-label="Refresh" />
+            {live.length > 0 && (
+              <Button variant="secondary" icon="stop" onClick={stopAll} disabled={pending}>
+                Stop all
+              </Button>
+            )}
+            <ButtonLink href="/studio/new" variant="primary" icon="plus">
+              New API
+            </ButtonLink>
+          </>
+        }
+      />
 
-      {(message || error) && (
-        <div className={error ? styles.bannerErr : styles.bannerOk} role={error ? "alert" : "status"}>
-          <span>{error ?? message}</span>
-          <button type="button" className={styles.ghost} onClick={() => (error ? refresh() : setMessage(null))}>
-            {error ? "Retry" : "Dismiss"}
+      {error && (
+        <Banner tone="danger" className={styles.gapBottom}>
+          {error}{" "}
+          <button type="button" className={styles.inlineLink} onClick={refresh}>
+            Retry
           </button>
+        </Banner>
+      )}
+
+      {specs.length > 0 && (
+        <div className={styles.stats}>
+          <div className={styles.stat}>
+            <span className={styles.statLabel}>
+              <span className={styles.liveDot} aria-hidden /> Live
+            </span>
+            <strong>{live.length}</strong>
+          </div>
+          <div className={styles.stat}>
+            <span className={styles.statLabel}>Drafts</span>
+            <strong>{specs.filter((s) => !liveNames.has(s.name)).length}</strong>
+          </div>
+          <div className={styles.stat}>
+            <span className={styles.statLabel}>Endpoints</span>
+            <strong>{endpointTotal}</strong>
+          </div>
         </div>
       )}
 
       {specs.length > 6 && (
-        <div className={styles.toolbar} style={{ marginBottom: 12 }}>
+        <div className={styles.search}>
+          <Icon name="search" />
           <input
-            className={styles.search}
-            placeholder="Search by name…"
+            placeholder="Search by name or title…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Search APIs"
@@ -152,63 +192,98 @@ export default function StudioCatalogPage() {
       )}
 
       {loading && specs.length === 0 && !error ? (
-        <div className={styles.empty} aria-busy="true">
-          Loading your APIs…
+        <div className={styles.cardGrid} aria-busy="true" aria-label="Loading your APIs">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className={styles.skeleton} />
+          ))}
         </div>
       ) : filtered.length === 0 && !error ? (
-        <div className={styles.empty}>
-          {specs.length === 0 ? (
-            <>
-              No APIs yet. <Link href="/studio/new">Create your first API</Link> from a database in
-              three steps.
-            </>
-          ) : (
-            "No APIs match your search."
-          )}
-        </div>
+        specs.length === 0 ? (
+          <EmptyState
+            icon="database"
+            title="No APIs yet"
+            action={
+              <ButtonLink href="/studio/new" variant="primary" icon="plus">
+                Create your first API
+              </ButtonLink>
+            }
+          >
+            Connect a database, pick the tables to share and publish — three steps, no code.
+          </EmptyState>
+        ) : (
+          <EmptyState icon="search" title="No APIs match your search" />
+        )
       ) : (
         <div className={styles.cardGrid}>
           {filtered.map((s) => {
             const isLive = liveNames.has(s.name);
+            const address = `${getApiBase()}/apis/${s.name}`;
             return (
-              <article key={s.name} className={styles.card} data-testid={`api-card-${s.name}`}>
-                <div className={styles.cardTop}>
-                  <h2 className={styles.cardTitle}>{s.title || s.name}</h2>
-                  <span className={isLive ? styles.badgeLive : styles.badge}>
-                    {isLive ? "Live" : "Draft"}
+              <article key={s.name} className={styles.apiCard} data-testid={`api-card-${s.name}`}>
+                <div className={styles.apiCardTop}>
+                  <span className={styles.apiIcon} aria-hidden>
+                    <Icon name="database" size={18} />
                   </span>
+                  <div className={styles.apiCardName}>
+                    <Link href={`/studio/${encodeURIComponent(s.name)}`} className={styles.apiCardLink}>
+                      {s.title || s.name}
+                    </Link>
+                    <span className={styles.apiCardSlug}>{s.name}</span>
+                  </div>
+                  <Badge tone={isLive ? "success" : "neutral"} dot pulse={isLive}>
+                    {isLive ? "Live" : "Draft"}
+                  </Badge>
                 </div>
-                <p className={styles.cardMeta}>
-                  {s.name} · {s.endpoint_count ?? 0} endpoint{s.endpoint_count === 1 ? "" : "s"}
-                  {s.auth ? ` · ${accessLabel(s.auth)}` : ""}
-                  {s.updated_at ? ` · updated ${new Date(s.updated_at * 1000).toLocaleDateString()}` : ""}
-                </p>
-                {isLive && (
-                  <p className={styles.cardMeta}>
-                    <code>{`${getApiBase()}/apis/${s.name}`}</code>
-                  </p>
-                )}
-                <div className={styles.toolbar} style={{ margin: 0 }}>
-                  <Link className={styles.secondary} href={`/studio/${encodeURIComponent(s.name)}`}>
-                    Open
-                  </Link>
-                  {isLive ? (
-                    <button type="button" className={styles.ghost} onClick={() => stop(s.name)} disabled={pending}>
-                      Stop
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className={styles.primary}
-                      onClick={() => makeLive(s.name)}
-                      disabled={pending}
-                    >
-                      Make live
-                    </button>
+                <div className={styles.metaRow}>
+                  <span>
+                    <Icon name="layers" size={14} /> {s.endpoint_count ?? 0} endpoint
+                    {s.endpoint_count === 1 ? "" : "s"}
+                  </span>
+                  {s.auth && (
+                    <span>
+                      <Icon name={s.auth === "none" ? "globe" : "lock"} size={14} /> {accessLabel(s.auth)}
+                    </span>
                   )}
-                  <button type="button" className={styles.danger} onClick={() => remove(s.name)} disabled={pending}>
-                    Delete
+                  {s.updated_at ? (
+                    <span>Updated {new Date(s.updated_at * 1000).toLocaleDateString()}</span>
+                  ) : null}
+                </div>
+                {isLive ? (
+                  <button
+                    type="button"
+                    className={styles.address}
+                    onClick={() => copyAddress(address)}
+                    title="Copy address"
+                  >
+                    <code>{address}</code>
+                    <Icon name="copy" size={14} />
                   </button>
+                ) : (
+                  <p className={styles.addressDraft}>Not running — make it live to get an address.</p>
+                )}
+                <div className={styles.apiCardActions}>
+                  <ButtonLink href={`/studio/${encodeURIComponent(s.name)}`} size="sm" variant="secondary">
+                    Open
+                  </ButtonLink>
+                  {isLive ? (
+                    <Button size="sm" variant="ghost" icon="stop" onClick={() => stop(s.name)} disabled={pending}>
+                      Stop
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="primary" icon="play" onClick={() => makeLive(s.name)} disabled={pending}>
+                      Make live
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="trash"
+                    className={styles.pushRight}
+                    onClick={() => remove(s.name)}
+                    disabled={pending}
+                    aria-label={`Delete ${s.name}`}
+                    title="Delete"
+                  />
                 </div>
               </article>
             );
@@ -217,16 +292,21 @@ export default function StudioCatalogPage() {
       )}
 
       {liveWithoutDesign.length > 0 && (
-        <section className={styles.panel} style={{ marginTop: 18 }}>
+        <section className={styles.orphans}>
           <h2>Running without a saved design</h2>
-          <p>These APIs answer requests but have no saved design here (for example started from the command line).</p>
-          <ul className={styles.chipRow}>
+          <p className={styles.muted}>
+            These APIs answer requests but have no saved design here (for example started from the
+            command line).
+          </p>
+          <ul>
             {liveWithoutDesign.map((m) => (
-              <li key={m.name} className={styles.chip}>
-                {m.name}{" "}
-                <button type="button" className={styles.ghost} onClick={() => stop(m.name)} disabled={pending}>
+              <li key={m.name}>
+                <Badge tone="success" dot>
+                  {m.name}
+                </Badge>
+                <Button size="sm" variant="ghost" icon="stop" onClick={() => stop(m.name)} disabled={pending}>
                   Stop
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

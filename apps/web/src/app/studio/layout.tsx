@@ -1,17 +1,11 @@
 import type { Metadata } from "next";
-import { StudioNav } from "@/components/studio/StudioNav";
-import styles from "@/components/studio/flow.module.css";
+import { StudioFrame } from "@/components/studio/StudioFrame";
 
 export const metadata: Metadata = {
   title: "Studio · contractapi",
-  description: "Design, activate, and operate Postgres → FastAPI contracts.",
+  description: "Design, publish and run secure APIs over your database.",
 };
 
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className={styles.page}>
-      <StudioNav />
-      <main id="studio-main">{children}</main>
-    </div>
-  );
+  return <StudioFrame>{children}</StudioFrame>;
 }

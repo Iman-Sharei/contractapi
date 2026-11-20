@@ -4,7 +4,9 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useTransition } from "react";
 import { diffSavedSpecs, listSpecs } from "@/lib/api";
 import type { OpenApiDiff, SpecListItem } from "@/lib/types";
-import styles from "@/components/studio/flow.module.css";
+import { Icon } from "@/components/ui/Icon";
+import { Badge, Banner, Button, Card, CardBody, CardHeader, EmptyState, Method, PageHeader, cx } from "@/components/ui/primitives";
+import styles from "@/components/studio/pages.module.css";
 
 function DiffInner() {
   const search = useSearchParams();
@@ -50,92 +52,104 @@ function DiffInner() {
 
   return (
     <>
-      <section className={styles.heroBlock}>
-        <p className={styles.kicker}>Studio</p>
-        <h1 className={styles.title}>Compare versions</h1>
-        <p className={styles.lede}>
-          Pick two saved APIs to see what changed. Changes that would break existing callers (a
-          removed address or operation) are flagged.
-        </p>
-      </section>
+      <PageHeader
+        eyebrow="Studio"
+        title="Compare versions"
+        description="Pick two saved APIs to see what changed. Changes that would break existing callers (a removed address or operation) are flagged."
+      />
 
       {error && (
-        <div className={styles.bannerErr} role="alert">
+        <Banner tone="danger" className={styles.gapBottom}>
           {error}
-        </div>
+        </Banner>
       )}
 
       {specs.length === 0 && !error ? (
-        <div className={styles.empty}>No saved specs yet — create one in the wizard first.</div>
-      ) : null}
-
-      <div className={styles.diffGrid}>
-        <label className={styles.field}>
-          Before
-          <select value={before} onChange={(e) => setBefore(e.target.value)}>
-            {specs.map((s) => (
-              <option key={s.name} value={s.name}>
-                {s.name} ({s.endpoint_count ?? 0} ep)
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={styles.field}>
-          After
-          <select value={after} onChange={(e) => setAfter(e.target.value)}>
-            {specs.map((s) => (
-              <option key={`a-${s.name}`} value={s.name}>
-                {s.name} ({s.endpoint_count ?? 0} ep)
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className={styles.toolbar}>
-        <button
-          type="button"
-          className={styles.primary}
-          onClick={onDiff}
-          disabled={pending || !before || !after || specs.length === 0}
-        >
-          Run OpenAPI diff
-        </button>
-      </div>
+        <EmptyState icon="compare" title="Nothing to compare yet">
+          Create an API in the wizard first; every save keeps a version you can compare.
+        </EmptyState>
+      ) : (
+        <Card>
+          <CardBody className={styles.diffPicker}>
+            <label>
+              Before
+              <select value={before} onChange={(e) => setBefore(e.target.value)}>
+                {specs.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.name} ({s.endpoint_count ?? 0} endpoints)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className={styles.diffArrow} aria-hidden>
+              <Icon name="arrowRight" />
+            </span>
+            <label>
+              After
+              <select value={after} onChange={(e) => setAfter(e.target.value)}>
+                {specs.map((s) => (
+                  <option key={`a-${s.name}`} value={s.name}>
+                    {s.name} ({s.endpoint_count ?? 0} endpoints)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              variant="primary"
+              icon="compare"
+              onClick={onDiff}
+              busy={pending}
+              disabled={pending || !before || !after}
+            >
+              Compare
+            </Button>
+          </CardBody>
+        </Card>
+      )}
 
       {result && (
-        <section className={styles.panel}>
-          <h2>{result.breaking ? "These changes would break existing callers" : "Safe changes — existing callers keep working"}</h2>
-          <p>
-            +{result.summary.added} / ~{result.summary.updated} / −{result.summary.removed}
-          </p>
-          <div className={styles.diffOut}>
+        <Card className={styles.diffResult}>
+          <CardHeader
+            icon={result.breaking ? "alert" : "checkCircle"}
+            title={
+              result.breaking
+                ? "These changes would break existing callers"
+                : "Safe changes — existing callers keep working"
+            }
+            actions={
+              <>
+                <Badge tone="success">+{result.summary.added} added</Badge>
+                <Badge tone="warning">~{result.summary.updated} changed</Badge>
+                <Badge tone="danger">−{result.summary.removed} removed</Badge>
+              </>
+            }
+          />
+          <CardBody>
             {result.changes.length === 0 ? (
-              <p>No path/method differences.</p>
+              <p className={styles.muted}>No differences in addresses or operations.</p>
             ) : (
-              result.changes.map((c, i) => {
-                const color =
-                  c.type === "NEW" ? styles.diffNew : c.type === "DELETE" ? styles.diffDel : styles.diffUpd;
-                const mark = c.type === "NEW" ? "+" : c.type === "DELETE" ? "−" : "~";
-                const fields = [
-                  c.added_fields?.length ? `+fields ${c.added_fields.join(",")}` : "",
-                  c.removed_fields?.length ? `−fields ${c.removed_fields.join(",")}` : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ");
-                return (
-                  <div key={i} className={color}>
-                    <code>
-                      {mark} {c.method} {c.path}
-                      {c.breaking ? <span className={styles.diffBreak}> BREAKING</span> : null}
-                      {fields ? ` (${fields})` : ""}
-                    </code>
-                  </div>
-                );
-              })
+              <ul className={styles.diffList}>
+                {result.changes.map((c, i) => {
+                  const kind = c.type === "NEW" ? "added" : c.type === "DELETE" ? "removed" : "changed";
+                  return (
+                    <li key={i} className={cx(styles.diffRow, styles[`diff-${kind}`])}>
+                      <span className={styles.diffKind}>{kind}</span>
+                      <Method method={c.method} />
+                      <code>{c.path}</code>
+                      {c.breaking && <Badge tone="danger">Breaking</Badge>}
+                      {c.added_fields?.length ? (
+                        <span className={styles.muted}>+ fields {c.added_fields.join(", ")}</span>
+                      ) : null}
+                      {c.removed_fields?.length ? (
+                        <span className={styles.muted}>− fields {c.removed_fields.join(", ")}</span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
             )}
-          </div>
-        </section>
+          </CardBody>
+        </Card>
       )}
     </>
   );
@@ -143,7 +157,7 @@ function DiffInner() {
 
 export default function DiffPage() {
   return (
-    <Suspense fallback={<p className={styles.lede}>Loading diff…</p>}>
+    <Suspense fallback={<p className={styles.muted}>Loading…</p>}>
       <DiffInner />
     </Suspense>
   );

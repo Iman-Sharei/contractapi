@@ -10,8 +10,10 @@ import {
   importDbt,
   oidcMe,
 } from "@/lib/api";
-import { copyText } from "@/lib/copy";
-import styles from "@/components/studio/flow.module.css";
+import { CodeBlock } from "@/components/ui/CodeBlock";
+import { Icon } from "@/components/ui/Icon";
+import { Banner, Button, ButtonLink, Card, CardBody, CardHeader, PageHeader, ui } from "@/components/ui/primitives";
+import styles from "@/components/studio/pages.module.css";
 
 export default function ToolsPage() {
   const [message, setMessage] = useState<string | null>(null);
@@ -107,144 +109,156 @@ export default function ToolsPage() {
 
   return (
     <>
-      <section className={styles.heroBlock}>
-        <p className={styles.kicker}>Studio</p>
-        <h1 className={styles.title}>Tools</h1>
-        <p className={styles.lede}>
-          Browse the project&apos;s git history and turn dbt models into API endpoints.
-        </p>
-        <div className={styles.toolbar}>
-          <button type="button" className={styles.ghost} onClick={refreshGit} disabled={pending}>
-            Refresh git
-          </button>
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="Studio"
+        title="Tools"
+        description="Browse the project's Git history and turn dbt models into API endpoints."
+        actions={
+          <Button variant="secondary" icon="refresh" onClick={refreshGit} disabled={pending}>
+            Refresh Git
+          </Button>
+        }
+      />
 
       {(message || error) && (
-        <div className={error ? styles.bannerErr : styles.bannerOk} role={error ? "alert" : "status"}>
-          <span>{error ?? message}</span>
-          <button
-            type="button"
-            className={styles.ghost}
-            onClick={() => {
-              setMessage(null);
-              setError(null);
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
+        <Banner
+          tone={error ? "danger" : "success"}
+          className={styles.gapBottom}
+          onDismiss={() => {
+            setMessage(null);
+            setError(null);
+          }}
+        >
+          {error ?? message}
+        </Banner>
       )}
 
-      {(oidc?.browser_login || oidc?.authenticated) && (
-      <section className={styles.panel} style={{ marginBottom: 16 }}>
-        <h2>Single sign-on</h2>
-        <p>
-          {oidc?.authenticated
-            ? `Signed in as ${oidc.email || "OIDC user"}`
-            : oidc?.browser_login
-              ? "Browser login configured — use the login link below."
-              : "Set STUDIO_OIDC_CLIENT_ID + REDIRECT_URI for cookie login (Bearer JWKS still works)."}
-        </p>
-        <div className={styles.toolbar}>
-          <a className={styles.primary} href={`${apiBase}/studio/oidc/login?return_to=/studio/tools`}>
-            Login with OIDC
-          </a>
-          <a className={styles.secondary} href={`${apiBase}/studio/oidc/logout`}>
-            Logout
-          </a>
-        </div>
-      </section>
-      )}
-
-      <section className={styles.panel} style={{ marginBottom: 16 }}>
-        <h2>Git browser</h2>
-        {branchInfo && (
-          <p>
-            {branchInfo.repo} · {branchInfo.current} · {branchInfo.branches.length} refs
-          </p>
+      <div className={styles.toolsGrid}>
+        {(oidc?.browser_login || oidc?.authenticated) && (
+          <Card className={styles.toolsWide}>
+            <CardHeader
+              icon="user"
+              title="Single sign-on"
+              description={
+                oidc?.authenticated
+                  ? `Signed in as ${oidc.email || "OIDC user"}`
+                  : "Browser login is configured — sign in with your identity provider."
+              }
+              actions={
+                <>
+                  <ButtonLink
+                    size="sm"
+                    variant="primary"
+                    href={`${apiBase}/studio/oidc/login?return_to=/studio/tools`}
+                    external
+                  >
+                    Sign in with SSO
+                  </ButtonLink>
+                  <ButtonLink size="sm" variant="secondary" href={`${apiBase}/studio/oidc/logout`} external>
+                    Sign out of SSO
+                  </ButtonLink>
+                </>
+              }
+            />
+            <CardBody />
+          </Card>
         )}
-        <label className={styles.field}>
-          <span>Ref</span>
-          <select
-            value={ref}
-            onChange={(e) => {
-              const next = e.target.value;
-              setRef(next);
-              startTransition(async () => {
-                try {
-                  const tree = await gitTree(next, path);
-                  setEntries(tree.entries);
-                  setFilePreview(null);
-                } catch (err) {
-                  setErr(err instanceof Error ? err.message : "Tree failed");
-                }
-              });
-            }}
-          >
-            {(branchInfo?.branches || ["HEAD"]).map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p>
-          Path: <code>{path || "/"}</code>{" "}
-          {path ? (
-            <button
-              type="button"
-              className={styles.ghost}
-              onClick={() => {
-                const parent = path.includes("/") ? path.split("/").slice(0, -1).join("/") : "";
-                openPath(parent, "dir");
-              }}
-            >
-              Up
-            </button>
-          ) : null}
-        </p>
-        <ul>
-          {entries.map((e) => (
-            <li key={e.path}>
-              <button type="button" className={styles.ghost} onClick={() => openPath(e.path, e.kind)}>
-                {e.kind === "dir" ? "[dir] " : ""}
-                {e.name}
-              </button>
-            </li>
-          ))}
-        </ul>
-        {filePreview != null && (
-          <div>
-            <button type="button" className={styles.secondary} onClick={() => copyText(filePreview)}>
-              Copy file
-            </button>
-            <pre style={{ maxHeight: 360, overflow: "auto", fontSize: 12 }}>{filePreview.slice(0, 8000)}</pre>
-          </div>
-        )}
-      </section>
 
-      <section className={styles.panel}>
-        <h2>dbt → endpoints</h2>
-        <p>Paste schema.yml JSON or a manifest.json document.</p>
-        <label className={styles.field}>
-          <span>JSON</span>
-          <textarea
-            rows={12}
-            value={dbtJson}
-            onChange={(e) => setDbtJson(e.target.value)}
-            spellCheck={false}
+        <Card>
+          <CardHeader
+            icon="compare"
+            title="Git browser"
+            description={
+              branchInfo
+                ? `${branchInfo.repo} · ${branchInfo.current} · ${branchInfo.branches.length} refs`
+                : "Read-only view of the repository the server runs from."
+            }
           />
-        </label>
-        <div className={styles.toolbar}>
-          <button type="button" className={styles.primary} onClick={runDbtImport} disabled={pending}>
-            Import
-          </button>
-        </div>
-        {dbtResult && (
-          <pre style={{ maxHeight: 360, overflow: "auto", fontSize: 12 }}>{dbtResult}</pre>
-        )}
-      </section>
+          <CardBody className={ui.stack}>
+            <label>
+              Branch or tag
+              <select
+                value={ref}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setRef(next);
+                  startTransition(async () => {
+                    try {
+                      const tree = await gitTree(next, path);
+                      setEntries(tree.entries);
+                      setFilePreview(null);
+                    } catch (err) {
+                      setErr(err instanceof Error ? err.message : "Tree failed");
+                    }
+                  });
+                }}
+              >
+                {(branchInfo?.branches || ["HEAD"]).map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className={styles.fileBox}>
+              <div className={styles.fileBoxHead}>
+                <code>/{path}</code>
+                {path ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="arrowLeft"
+                    onClick={() => {
+                      const parent = path.includes("/") ? path.split("/").slice(0, -1).join("/") : "";
+                      openPath(parent, "dir");
+                    }}
+                  >
+                    Up
+                  </Button>
+                ) : null}
+              </div>
+              <ul className={styles.fileList}>
+                {entries.map((e) => (
+                  <li key={e.path}>
+                    <button type="button" onClick={() => openPath(e.path, e.kind)}>
+                      <Icon name={e.kind === "dir" ? "layers" : "file"} size={14} />
+                      {e.name}
+                    </button>
+                  </li>
+                ))}
+                {entries.length === 0 && <li className={styles.railEmpty}>Empty.</li>}
+              </ul>
+            </div>
+            {filePreview != null && <CodeBlock code={filePreview.slice(0, 8000)} title="File preview" />}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            icon="table"
+            title="dbt → endpoints"
+            description="Paste a schema.yml (as JSON) or a manifest.json; each model becomes an endpoint draft."
+          />
+          <CardBody className={ui.stack}>
+            <label>
+              JSON
+              <textarea
+                rows={12}
+                value={dbtJson}
+                onChange={(e) => setDbtJson(e.target.value)}
+                spellCheck={false}
+                className={styles.monoArea}
+              />
+            </label>
+            <div>
+              <Button variant="primary" icon="arrowRight" onClick={runDbtImport} disabled={pending}>
+                Import
+              </Button>
+            </div>
+            {dbtResult && <CodeBlock code={dbtResult} title="Result" />}
+          </CardBody>
+        </Card>
+      </div>
     </>
   );
 }

@@ -3,7 +3,11 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatApiError } from "@/lib/formatError";
-import styles from "@/components/studio/flow.module.css";
+import { Brand } from "@/components/studio/StudioFrame";
+import { Icon } from "@/components/ui/Icon";
+import { Banner, Button, ButtonLink, Hint } from "@/components/ui/primitives";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import styles from "../page.module.css";
 
 /** Only same-site relative paths: never redirect off-site after login. */
 function safeNext(raw: string | null): string {
@@ -51,61 +55,73 @@ function LoginForm() {
   }
 
   return (
-    <main className={styles.page} style={{ maxWidth: 440 }}>
-      <h1 className={styles.title}>Sign in to Studio</h1>
-      <p className={styles.lede}>
-        Paste the Studio key your administrator gave you (the <code>STUDIO_API_KEY</code> of the
-        server). The key is only checked here — your browser keeps a signed sign-in that expires
-        after 12 hours, never the key itself.
-      </p>
-      {demoKey ? (
-        <div className={styles.bannerOk} role="note" data-testid="login-demo-hint">
-          <span>
-            This is a demo install, so the key is <code>{demoKey}</code>.{" "}
-            <button type="button" className={styles.ghost} onClick={() => setKey(demoKey)}>
-              Use it
-            </button>
-            <br />
-            Before real use, set your own <code>STUDIO_API_KEY</code> in the server&apos;s{" "}
-            <code>.env</code> file and restart.
+    <div className={styles.page}>
+      <header className={styles.nav}>
+        <Brand />
+        <ThemeToggle />
+      </header>
+      <main className={styles.auth}>
+        <div className={styles.authCard}>
+          <span className={styles.authIcon}>
+            <Icon name="lock" size={20} />
           </span>
-        </div>
-      ) : (
-        <p className={styles.hint} data-testid="login-key-hint">
-          Don&apos;t have it? Ask whoever runs this server. They can read it with{" "}
-          <code>docker compose exec web printenv STUDIO_API_KEY</code>.
-        </p>
-      )}
-      <form onSubmit={submit} className={styles.panel} style={{ display: "grid", gap: 12 }}>
-        <label className={styles.field}>
-          Studio key
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            data-testid="login-key"
-            required
-          />
-        </label>
-        {error && (
-          <p className={styles.bannerErr} role="alert">
-            {error}
+          <h1>Sign in to Studio</h1>
+          <p className={styles.authLede}>
+            Paste the Studio key your administrator gave you (the <code>STUDIO_API_KEY</code> of the
+            server). It is only checked here — your browser keeps a signed sign-in for 12 hours, never
+            the key itself.
           </p>
-        )}
-        <button type="submit" className={styles.primary} disabled={busy} data-testid="login-submit">
-          {busy ? "Checking…" : "Sign in"}
-        </button>
-        {sso && (
-          <a
-            className={styles.secondary}
-            href={`/api/studio/oidc/login?return_to=${encodeURIComponent(next)}`}
-          >
-            Sign in with SSO
-          </a>
-        )}
-      </form>
-    </main>
+          <form onSubmit={submit} className={styles.authForm}>
+            {demoKey && (
+              <Banner tone="accent" role="note" data-testid="login-demo-hint">
+                This is a demo install, so the key is <code>{demoKey}</code>.{" "}
+                <button type="button" className={styles.linkBtn} onClick={() => setKey(demoKey)}>
+                  Use it
+                </button>
+                <br />
+                Before real use, set your own <code>STUDIO_API_KEY</code> in the server&apos;s{" "}
+                <code>.env</code> file and restart.
+              </Banner>
+            )}
+            <label>
+              Studio key
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                data-testid="login-key"
+                required
+                autoFocus
+              />
+              {!demoKey && (
+                <Hint data-testid="login-key-hint">
+                  Don&apos;t have it? Ask whoever runs this server. They can read it with{" "}
+                  <code>docker compose exec web printenv STUDIO_API_KEY</code>.
+                </Hint>
+              )}
+            </label>
+            {error && <Banner tone="danger">{error}</Banner>}
+            <Button type="submit" variant="primary" size="lg" busy={busy} disabled={busy} data-testid="login-submit">
+              {busy ? "Checking…" : "Sign in"}
+            </Button>
+            {sso && (
+              <>
+                <span className={styles.divider}>or</span>
+                <ButtonLink
+                  variant="secondary"
+                  size="lg"
+                  icon="user"
+                  href={`/api/studio/oidc/login?return_to=${encodeURIComponent(next)}`}
+                >
+                  Sign in with SSO
+                </ButtonLink>
+              </>
+            )}
+          </form>
+        </div>
+      </main>
+    </div>
   );
 }
 

@@ -76,21 +76,27 @@ test.describe("API page → editor → Use your API", () => {
     const anon = await page.request.get(`${(await url.textContent())?.trim()}?limit=1`);
     expect(anon.status()).toBe(401);
 
-    // Editor explains a bad URL path before the server rejects it.
-    const pathInput = page.getByLabel("Address (URL path)");
-    // Wait until the editor finished loading the saved spec, or the load overwrites our edit.
-    await expect(pathInput).toHaveValue("/customers", { timeout: 30_000 });
-    await pathInput.fill("/Bad Path");
-    await expect(page.getByText(/Use lowercase letters/)).toBeVisible();
-
     // Stop affects only this API; other live APIs keep running.
     const before = (await (await page.request.get("/api/studio/active/list")).json()) as { apis: { name: string }[] };
-    page.once("dialog", (d) => d.accept());
     await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+    await page.getByTestId("confirm-ok").click();
     await expect(page.getByTestId("api-status")).toHaveText("Draft — not running", { timeout: 30_000 });
     const after = (await (await page.request.get("/api/studio/active/list")).json()) as { apis: { name: string }[] };
     expect(after.apis.map((a) => a.name).sort()).toEqual(
       before.apis.map((a) => a.name).filter((n) => n !== name).sort(),
     );
+
+    // Editor explains a bad URL path before the server rejects it.
+    await page.getByRole("tab", { name: /Endpoints/ }).click();
+    await expect(page).toHaveURL(/tab=endpoints/);
+    const pathInput = page.getByLabel("Address (URL path)");
+    // Wait until the editor finished loading the saved spec, or the load overwrites our edit.
+    await expect(pathInput).toHaveValue("/customers", { timeout: 30_000 });
+    await pathInput.fill("/Bad Path");
+    await expect(page.getByText(/Use lowercase letters/)).toBeVisible();
+    // Unsaved edits are visible, with save actions next to them.
+    await expect(page.getByText("Unsaved changes")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save & make live" })).toBeVisible();
   });
 });

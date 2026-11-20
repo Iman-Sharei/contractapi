@@ -1,11 +1,12 @@
 "use client";
 
 import { ALL_METHODS } from "@/lib/types";
-import styles from "../studio.module.css";
+import { CodeBlock } from "@/components/ui/CodeBlock";
+import styles from "./editor.module.css";
 import { type EditorState } from "./useEditorState";
 
 export function PlayTab({ s }: { s: EditorState }) {
-  const { spec, pending, playMethod, setPlayMethod, playPath, setPlayPath, playQuery, setPlayQuery, playBody, setPlayBody, playBearer, setPlayBearer, playRoles, setPlayRoles, playExpiresMin, setPlayExpiresMin, playClaims, setPlayClaims, playResult, endpoint, draftSpec, snippets, onCopy, onTry } = s;
+  const { spec, pending, playMethod, setPlayMethod, playPath, setPlayPath, playQuery, setPlayQuery, playBody, setPlayBody, playBearer, setPlayBearer, playRoles, setPlayRoles, playExpiresMin, setPlayExpiresMin, playClaims, setPlayClaims, playResult, endpoint, draftSpec, snippets, onTry } = s;
   if (!endpoint) return null; // rendered only for a selected endpoint
   return (
     <>
@@ -104,28 +105,9 @@ export function PlayTab({ s }: { s: EditorState }) {
         </button>
       </div>
       <pre className={styles.playOut}>{playResult || "Response appears here after Send."}</pre>
-      <div className={styles.rowGap}>
-        <h3 style={{ margin: 0, flex: 1 }}>curl</h3>
-        <button
-          type="button"
-          className={styles.ghostBtn}
-          onClick={() => onCopy(snippets.curl, "curl")}
-        >
-          Copy
-        </button>
-      </div>
-      <pre className={styles.yaml}>{snippets.curl}</pre>
-      <div className={styles.rowGap}>
-        <h3 style={{ margin: 0, flex: 1 }}>Python + pandas</h3>
-        <button
-          type="button"
-          className={styles.ghostBtn}
-          onClick={() => onCopy(snippets.python, "Python")}
-        >
-          Copy
-        </button>
-      </div>
-      <pre className={styles.yaml}>{snippets.python}</pre>
+      <h3>Same request as code</h3>
+      <CodeBlock code={snippets.curl} title="curl" />
+      <CodeBlock code={snippets.python} title="Python + pandas" />
     </div>
     </>
   );

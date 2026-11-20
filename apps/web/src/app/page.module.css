@@ -1,117 +1,374 @@
+/* Landing page and sign-in page. */
+
 .page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 28px 24px 80px;
-  animation: rise 0.6s ease both;
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 480px at 85% -10%, color-mix(in srgb, #8b5cf6 16%, transparent), transparent 60%),
+    radial-gradient(800px 420px at 0% 0%, color-mix(in srgb, #6366f1 14%, transparent), transparent 60%),
+    var(--bg);
 }
 
 .nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 64px;
+  gap: 12px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px 24px;
 }
 
-.brand {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 1.35rem;
-  letter-spacing: -0.03em;
-}
-
-.navLink {
-  border: 1px solid var(--ink);
-  padding: 0.55rem 1rem;
-  border-radius: 999px;
-  font-weight: 500;
-  transition: background 160ms ease, color 160ms ease;
-}
-
-.navLink:hover {
-  background: var(--ink);
-  color: var(--paper);
+.navRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .hero {
-  max-width: 720px;
-  margin-bottom: 72px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 48px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 56px 24px 72px;
 }
 
-.kicker {
-  margin: 0 0 12px;
-  color: var(--accent);
+.heroText {
+  animation: rise 0.4s ease;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.8rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-size: 0.78rem;
+  color: var(--text-2);
+  box-shadow: var(--shadow-sm);
+}
+
+.pill svg {
+  color: var(--accent);
 }
 
 .title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(3.4rem, 9vw, 6.2rem);
-  line-height: 0.92;
-  letter-spacing: -0.05em;
+  margin: 20px 0 16px;
+  font-size: clamp(2.3rem, 5vw, 3.6rem);
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+  font-weight: 750;
+}
+
+.gradient {
+  background: linear-gradient(100deg, #6366f1, #8b5cf6 45%, #06b6d4);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .lede {
-  margin: 22px 0 0;
-  max-width: 36rem;
-  color: var(--ink-soft);
-  font-size: 1.12rem;
+  max-width: 54ch;
+  margin: 0 0 28px;
+  font-size: 1.075rem;
+  color: var(--text-2);
 }
 
 .ctaRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 28px;
+  gap: 10px;
 }
 
-.cta {
-  background: var(--accent);
-  color: white;
-  padding: 0.85rem 1.25rem;
-  border-radius: 999px;
+.preview {
+  border: 1px solid color-mix(in srgb, #ffffff 10%, transparent);
+  border-radius: 18px;
+  background: var(--code-bg);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 1px rgba(99, 102, 241, 0.15),
+    0 30px 80px -20px rgba(99, 102, 241, 0.45);
+  overflow: hidden;
+  animation: rise 0.5s ease;
+}
+
+.previewBar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.previewBar span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.previewBar em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 0.75rem;
   font-weight: 600;
-  transition: background 160ms ease, transform 160ms ease;
+  color: #4ade9f;
 }
 
-.cta:hover {
-  background: var(--accent-deep);
-  transform: translateY(-1px);
+.previewCode {
+  padding: 18px 20px;
+  border-radius: 0;
+  font-size: 0.8rem;
+  line-height: 1.7;
+  white-space: pre;
+  overflow-x: auto;
 }
 
-.ghost {
-  border: 1px solid var(--line);
-  padding: 0.85rem 1.25rem;
+.c1 {
+  color: #8b93b5;
+}
+
+.c2 {
+  color: #a5f3c4;
+}
+
+.c3 {
+  color: #a8b1ff;
+}
+
+.previewFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+
+.ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
-  color: var(--ink-soft);
+  background: rgba(16, 185, 129, 0.14);
+  color: #4ade9f;
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
-.rail {
+.section {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 24px 56px;
+}
+
+.sectionTitle {
+  margin: 0 0 24px;
+  font-size: clamp(1.4rem, 2.6vw, 1.9rem);
+  letter-spacing: -0.03em;
+  text-align: center;
+}
+
+.steps {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px;
-  border-top: 1px solid var(--line);
-  padding-top: 28px;
-}
-
-.rail h2 {
-  margin: 0 0 8px;
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  letter-spacing: -0.02em;
-}
-
-.rail p {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
   margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.95rem;
+  padding: 0;
+  list-style: none;
 }
 
-@media (max-width: 800px) {
-  .rail {
-    grid-template-columns: 1fr;
+.steps li,
+.features article {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.steps h3,
+.features h3 {
+  margin: 6px 0 6px;
+  font-size: 1.02rem;
+}
+
+.steps p,
+.features p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+
+.stepIcon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
+.stepNum {
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-text);
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.features article > svg {
+  color: var(--accent-text);
+}
+
+.band {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  max-width: 1132px;
+  margin: 8px auto 56px;
+  padding: 44px 24px;
+  border-radius: 22px;
+  background: linear-gradient(120deg, #4f46e5, #7c3aed 55%, #0891b2);
+  color: #fff;
+  text-align: center;
+}
+
+.band h2 {
+  margin: 0;
+  font-size: clamp(1.4rem, 2.6vw, 1.9rem);
+  letter-spacing: -0.03em;
+}
+
+.band p {
+  margin: 0 0 12px;
+  opacity: 0.85;
+}
+
+.band a {
+  background: #fff;
+  color: #312e81;
+}
+
+.band a:hover {
+  background: #eef0ff;
+}
+
+.footer {
+  padding: 24px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-3);
+}
+
+/* ---- sign-in ---- */
+.auth {
+  display: grid;
+  place-items: center;
+  min-height: calc(100vh - 80px);
+  padding: 24px 16px 64px;
+}
+
+.authCard {
+  width: min(440px, 100%);
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: rise 0.3s ease;
+}
+
+.authIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.authCard h1 {
+  margin: 0 0 6px;
+  font-size: 1.5rem;
+}
+
+.authLede {
+  margin: 0 0 20px;
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+
+.authForm {
+  display: grid;
+  gap: 14px;
+}
+
+.authForm > button,
+.authForm > a {
+  width: 100%;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.75rem;
+  color: var(--text-3);
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px;
+    padding-top: 28px;
   }
+
+  .steps,
+  .features {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .band {
+    margin: 8px 16px 40px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 900px) {
+  .features {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.linkBtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-weight: 650;
+  text-decoration: underline;
 }

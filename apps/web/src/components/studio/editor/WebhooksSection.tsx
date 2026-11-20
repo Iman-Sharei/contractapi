@@ -1,7 +1,7 @@
 "use client";
 
 import { WEBHOOK_EVENTS } from "@/lib/types";
-import styles from "../studio.module.css";
+import styles from "./editor.module.css";
 import { type EditorState } from "./useEditorState";
 
 export function WebhooksSection({ s }: { s: EditorState }) {

@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Studio redesign
+- New look: one design system (Inter / JetBrains Mono, indigo accent) with light and dark mode
+  (follows the system, toggle in the sidebar); colours come from shared light/dark tokens
+- Sidebar navigation with icons; on phones a top bar and slide-in menu
+- My APIs: live/draft counters, cards with a pulsing Live badge and a click-to-copy address
+- Wizard: step indicator, table cards with a column picker (private columns locked), access
+  choices as cards, a review panel with the final address, and a sticky publish bar
+- API page is a workspace with tabs — **Overview** (address, key, code, at a glance),
+  **Endpoints** (list + editor side by side), **Settings** and **API file**; the tab is kept in
+  the URL (`?tab=endpoints`). "Unsaved changes" shows next to Save draft / Save & make live
+- Keys & settings split into API keys, Versions & environments, Downloads and Activity
+- In-page confirmation dialogs replace browser pop-ups; short success messages appear as toasts
+- Compare versions shows added / changed / removed operations with method badges
+
 ### Studio: simpler flow for non-coders
 - New-API wizard asks for server, port, database, user and password as separate fields (a
   connection URL is optional), warns before reusing an existing name, and says "Publish API"

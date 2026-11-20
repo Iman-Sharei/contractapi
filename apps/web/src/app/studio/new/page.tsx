@@ -12,7 +12,10 @@ import { defaultSafeColumns, ensurePrimaryKey } from "@/lib/pickColumns";
 import { tableKey } from "@/lib/tableKey";
 import type { ApiSpecDraft, EndpointDraft, TableInfo } from "@/lib/types";
 import { ALL_FILTER_OPS } from "@/lib/types";
-import styles from "@/components/studio/flow.module.css";
+import { Icon } from "@/components/ui/Icon";
+import { useConfirm } from "@/components/ui/feedback";
+import { Banner, PageHeader, cx } from "@/components/ui/primitives";
+import styles from "@/components/studio/pages.module.css";
 
 const STEPS = ["Connect", "Choose data", "Protect & publish"] as const;
 
@@ -48,6 +51,7 @@ export default function NewApiWizardPage() {
   const [allowWrites, setAllowWrites] = useState(false);
   const [title, setTitle] = useState("My Data API");
   const [apiPrefix, setApiPrefix] = useState("");
+  const confirm = useConfirm();
 
   useEffect(() => {
     listSpecs()
@@ -142,6 +146,7 @@ export default function NewApiWizardPage() {
       return;
     }
     setError(null);
+    setMessage(null);
     setStep(i);
   }
 
@@ -180,6 +185,7 @@ export default function NewApiWizardPage() {
   }
 
   function setUseUrlMode(next: boolean) {
+    if (next === useUrl) return;
     // Carry what the user already typed across the two input styles.
     if (next) setPastedUrl(buildPgUrl(fields));
     else {
@@ -224,7 +230,7 @@ export default function NewApiWizardPage() {
     setPickedColumns((prev) => ({ ...prev, [key]: ensurePrimaryKey(cols, table) }));
   }
 
-  function onPublish(live: boolean) {
+  async function onPublish(live: boolean) {
     setError(null);
     if (!/^[a-z][a-z0-9_-]{0,63}$/.test(slug)) {
       setError("The API name must start with a letter and use only lowercase letters, digits and _.");
@@ -234,7 +240,14 @@ export default function NewApiWizardPage() {
       setError("Pick at least one table before publishing.");
       return;
     }
-    if (nameTaken && !window.confirm(`Replace the existing API '${slug}'? Its current version stays in history.`)) {
+    if (
+      nameTaken &&
+      !(await confirm({
+        title: `Replace the existing API '${slug}'?`,
+        body: "Its current version stays in the history, so you can restore it later.",
+        confirmLabel: "Replace it",
+      }))
+    ) {
       return;
     }
     startTransition(async () => {
@@ -255,32 +268,35 @@ export default function NewApiWizardPage() {
   }
 
   return (
-    <>
-      <section className={styles.heroBlock}>
-        <p className={styles.kicker}>New API</p>
-        <h1 className={styles.title}>Create an API from your database</h1>
-        <p className={styles.lede}>Three steps, no code: connect, choose data, protect &amp; publish.</p>
-      </section>
+    <div className={styles.wizard}>
+      <PageHeader
+        eyebrow="New API"
+        title="Create an API from your database"
+        description="Three steps, no code: connect, choose the data to share, then protect and publish."
+      />
 
-      <div className={styles.steps} role="tablist" aria-label="Wizard steps">
+      <ol className={styles.stepper} aria-label="Wizard steps">
         {STEPS.map((label, i) => (
-          <button
-            key={label}
-            type="button"
-            role="tab"
-            aria-selected={i === step}
-            className={i === step ? styles.stepOn : i < step ? styles.stepDone : styles.step}
-            onClick={() => goStep(i)}
-          >
-            {i + 1}. {label}
-          </button>
+          <li key={label} className={cx(styles.stepItem, i === step && styles.stepCurrent, i < step && styles.stepDone)}>
+            <button type="button" onClick={() => goStep(i)} aria-current={i === step ? "step" : undefined}>
+              <span className={styles.stepNum}>{i < step ? <Icon name="check" size={14} /> : i + 1}</span>
+              <span className={styles.stepLabel}>{label}</span>
+            </button>
+          </li>
         ))}
-      </div>
+      </ol>
 
       {(message || error) && (
-        <div className={error ? styles.bannerErr : styles.bannerOk} role={error ? "alert" : "status"}>
+        <Banner
+          tone={error ? "danger" : "success"}
+          className={styles.gapBottom}
+          onDismiss={() => {
+            setError(null);
+            setMessage(null);
+          }}
+        >
           {error ?? message}
-        </div>
+        </Banner>
       )}
 
       {step === 0 && (
@@ -295,6 +311,7 @@ export default function NewApiWizardPage() {
           setSchema={setSchema}
           apiName={apiName}
           setApiName={setApiName}
+          slug={slug}
           nameTaken={nameTaken}
           pending={pending}
           onConnect={onConnect}
@@ -332,6 +349,6 @@ export default function NewApiWizardPage() {
           onPublish={onPublish}
         />
       )}
-    </>
+    </div>
   );
 }

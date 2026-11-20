@@ -2,7 +2,7 @@
 
 import { pathError } from "@/lib/pathRules";
 import { ALL_FILTER_OPS, ALL_METHODS } from "@/lib/types";
-import styles from "../studio.module.css";
+import styles from "./editor.module.css";
 import { type EditorState } from "./useEditorState";
 
 export function ContractTab({ s }: { s: EditorState }) {
@@ -144,6 +144,7 @@ export function ContractTab({ s }: { s: EditorState }) {
               <button
                 key={m}
                 type="button"
+                aria-pressed={Boolean(endpoint.methods.includes(m))}
                 className={[
                   styles.chip,
                   endpoint.methods.includes(m) ? styles.chipOn : "",
@@ -168,6 +169,7 @@ export function ContractTab({ s }: { s: EditorState }) {
               <button
                 key={name}
                 type="button"
+                aria-pressed={Boolean(on)}
                 className={[
                   styles.chip,
                   on ? styles.chipOn : "",
@@ -190,6 +192,7 @@ export function ContractTab({ s }: { s: EditorState }) {
               <button
                 key={f}
                 type="button"
+                aria-pressed={Boolean(endpoint.filters.includes(f))}
                 className={[
                   styles.chip,
                   endpoint.filters.includes(f) ? styles.chipOn : "",
@@ -208,6 +211,7 @@ export function ContractTab({ s }: { s: EditorState }) {
               <button
                 key={f}
                 type="button"
+                aria-pressed={Boolean(endpoint.sortable.includes(f))}
                 className={[
                   styles.chip,
                   endpoint.sortable.includes(f) ? styles.chipOn : "",
@@ -231,7 +235,8 @@ export function ContractTab({ s }: { s: EditorState }) {
                 <button
                   key={f}
                   type="button"
-                  className={[
+                  aria-pressed={Boolean((endpoint.writable_fields ?? []).includes(f))}
+                className={[
                     styles.chip,
                     (endpoint.writable_fields ?? []).includes(f) ? styles.chipOn : "",
                   ].join(" ")}

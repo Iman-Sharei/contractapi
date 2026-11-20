@@ -1,14 +1,17 @@
-import Link from "next/link";
-import styles from "@/components/studio/flow.module.css";
+import { ButtonLink, EmptyState } from "@/components/ui/primitives";
 
 export default function StudioNotFound() {
   return (
-    <section className={styles.panel}>
-      <h1 className={styles.title}>Page not found</h1>
-      <p>That Studio route does not exist.</p>
-      <Link className={styles.secondary} href="/studio">
-        ← My APIs
-      </Link>
-    </section>
+    <EmptyState
+      icon="search"
+      title="Page not found"
+      action={
+        <ButtonLink href="/studio" icon="arrowLeft">
+          My APIs
+        </ButtonLink>
+      }
+    >
+      That Studio page does not exist.
+    </EmptyState>
   );
 }

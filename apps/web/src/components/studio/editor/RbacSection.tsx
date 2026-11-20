@@ -1,7 +1,7 @@
 "use client";
 
 import { getDataApiKey } from "@/lib/api";
-import styles from "../studio.module.css";
+import styles from "./editor.module.css";
 import { type EditorState } from "./useEditorState";
 
 export function RbacSection({ s }: { s: EditorState }) {

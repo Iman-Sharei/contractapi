@@ -1,0 +1,254 @@
+/* Endpoint editor internals. Buttons reuse the shared button styles. */
+
+.primary {
+  composes: btn primary sm from "../../ui/ui.module.css";
+}
+
+.secondary {
+  composes: btn secondary sm from "../../ui/ui.module.css";
+}
+
+.ghostBtn {
+  composes: btn ghost sm from "../../ui/ui.module.css";
+}
+
+.dangerBtn {
+  composes: btn danger sm from "../../ui/ui.module.css";
+}
+
+.hint {
+  composes: hint from "../../ui/ui.module.css";
+  margin: 0;
+}
+
+.empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-3);
+}
+
+.errLine {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--danger-text);
+}
+
+/* the editor body: a column of headings, fields and chip groups */
+.editorBlock {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.editorBlock h3 {
+  margin: 10px 0 -4px;
+  font-size: 0.8rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+}
+
+.editorBlock > h3:first-child {
+  margin-top: 0;
+}
+
+.metaGrid,
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+
+.fieldGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.twoCol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+
+.twoCol > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.twoCol h3 {
+  margin: 0;
+}
+
+.span2 {
+  grid-column: span 2;
+}
+
+.span3 {
+  grid-column: 1 / -1;
+}
+
+.check {
+  font-size: 0.875rem;
+}
+
+.rowGap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inputWithBtn {
+  display: flex;
+  gap: 8px;
+}
+
+.inputWithBtn input {
+  flex: 1;
+}
+
+/* chip toggles (operations, fields, filters, sort) */
+.allowlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 500;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+.chip:hover {
+  border-color: var(--text-3);
+  color: var(--text);
+}
+
+.chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0.6;
+}
+
+.chipOn {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.chipOn::before {
+  background: currentColor;
+  opacity: 1;
+}
+
+.chipWarn {
+  border-style: dashed;
+  border-color: var(--warning);
+}
+
+/* repeated sub-cards (relations, rules, webhooks, roles) */
+.relCard {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.settingsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settingsHead h3,
+.settingsHead strong {
+  margin: 0;
+}
+
+.toggleRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.switchGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 16px 20px;
+  margin: 14px 0 18px;
+}
+
+.advanced {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.advanced[open] > summary {
+  margin-bottom: 14px;
+}
+
+.advanced > *:not(summary) + *:not(summary) {
+  margin-top: 14px;
+}
+
+/* code-ish boxes */
+.sqlBox {
+  min-height: 140px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 0.8rem !important;
+  background: var(--code-bg) !important;
+  color: var(--code-text) !important;
+  border-color: transparent !important;
+}
+
+.yaml,
+.playOut {
+  max-height: 360px;
+}
+
+.playOut {
+  min-height: 120px;
+}
+
+@media (max-width: 760px) {
+  .metaGrid,
+  .fieldGrid,
+  .twoCol {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .span2 {
+    grid-column: auto;
+  }
+}
+
+.editorBlock > button,
+.relCard > button {
+  justify-self: start;
+}

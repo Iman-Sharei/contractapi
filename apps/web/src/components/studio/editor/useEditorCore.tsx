@@ -68,7 +68,6 @@ export function useEditorCore({
   const [spec, setSpec] = useState<ApiSpecDraft>(() => emptySpec(PG_DEFAULT_URL));
   const [activeEndpoint, setActiveEndpoint] = useState<string | null>(null);
   const [specName, setSpecName] = useState(initialName ?? "demo");
-  const [savedNames, setSavedNames] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<ValidateResult | null>(null);
@@ -77,7 +76,6 @@ export function useEditorCore({
   const [pending, startTransition] = useTransition();
   const [dirty, setDirty] = useState(false);
   const [showDbUrl, setShowDbUrl] = useState(false);
-  const [contractOpen, setContractOpen] = useState(false);
   const yamlWarnOnce = useRef(false);
   const skipDirty = useRef(true);
 
@@ -175,7 +173,6 @@ export function useEditorCore({
         setActiveEndpoint(first?.name ?? null);
         setEditorTab("contract");
         setDirty(false);
-        setMessage(`Loaded '${initialName}'.`);
         const schemaHint = first?.schema || "public";
         try {
           const intro = await introspectDatabase(loaded.spec.database.url, schemaHint);
@@ -264,8 +261,6 @@ export function useEditorCore({
     setActiveEndpoint,
     specName,
     setSpecName,
-    savedNames,
-    setSavedNames,
     message,
     setMessage,
     error,
@@ -282,8 +277,6 @@ export function useEditorCore({
     setDirty,
     showDbUrl,
     setShowDbUrl,
-    contractOpen,
-    setContractOpen,
     yamlWarnOnce,
     skipDirty,
     playMethod,

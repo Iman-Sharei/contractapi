@@ -1,29 +1,33 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { CodeBlock } from "@/components/ui/CodeBlock";
+import { Icon } from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/feedback";
+import { Banner, Button, ButtonLink, Card, CardBody, CardHeader, EmptyState } from "@/components/ui/primitives";
 import { createApiKey, getApiBase, listActiveApis, loadSpec } from "@/lib/api";
 import { copyText } from "@/lib/copy";
 import { curlSnippet, endpointUrl, pandasSnippet, pythonSnippet } from "@/lib/snippets";
 import type { ApiSpecDraft } from "@/lib/types";
-import { SafetyChecklist } from "./SafetyChecklist";
-import styles from "./flow.module.css";
+import styles from "./pages.module.css";
 
 const LANGS = [
-  ["curl", "curl", curlSnippet],
-  ["python", "Python", pythonSnippet],
-  ["pandas", "pandas", pandasSnippet],
+  { id: "curl", label: "curl", make: curlSnippet },
+  { id: "python", label: "Python", make: pythonSnippet },
+  { id: "pandas", label: "pandas", make: pandasSnippet },
 ] as const;
+type Lang = (typeof LANGS)[number]["id"];
 
-/** After activation: the live URL, a key, and copy-paste code — no API knowledge needed. */
+/** After publishing: the live address, a key and copy-paste code — no API knowledge needed. */
 export function UseYourApi({ name, refreshKey = 0 }: { name: string; refreshKey?: number }) {
   const [spec, setSpec] = useState<ApiSpecDraft | null>(null);
   const [live, setLive] = useState(false);
   const [endpointName, setEndpointName] = useState<string>("");
-  const [lang, setLang] = useState<(typeof LANGS)[number][0]>("curl");
+  const [lang, setLang] = useState<Lang>("curl");
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const toast = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -71,94 +75,101 @@ export function UseYourApi({ name, refreshKey = 0 }: { name: string; refreshKey?
     });
   }
 
-  if (!spec) return error ? <p className={styles.bannerErr}>{error}</p> : null;
+  if (!spec) return error ? <Banner tone="danger">{error}</Banner> : <div className={styles.skeleton} />;
 
-  const snippet = input ? LANGS.find(([id]) => id === lang)![2](input) : "";
+  const snippet = input ? LANGS.find((l) => l.id === lang)!.make(input) : "";
+  const url = input ? endpointUrl(input) : "";
 
   return (
-    <section className={styles.panel} data-testid="use-your-api" aria-labelledby="use-your-api-title">
-      <h2 id="use-your-api-title">Use your API</h2>
-      {!live ? (
-        <p className={styles.hint}>Make this API live to get its address and ready-to-run code.</p>
-      ) : (
-        <>
-          {spec.endpoints.length > 1 && (
-            <label className={styles.field}>
-              Endpoint
-              <select value={endpoint?.name} onChange={(e) => setEndpointName(e.target.value)}>
-                {spec.endpoints.map((e) => (
-                  <option key={e.name} value={e.name}>
-                    {e.name} — {e.path}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {input && (
-            <p>
-              Live URL: <code data-testid="use-your-api-url">{endpointUrl(input)}</code>
-            </p>
-          )}
-
-          {spec.app.auth === "api_key" && (
-            <div className={styles.toolbar}>
-              {apiKey ? (
-                <p className={styles.revealBox} role="status">
-                  Your new key (shown only once — store it safely): <code data-testid="use-your-api-key">{apiKey}</code>
-                </p>
-              ) : (
-                <button type="button" className={styles.secondary} onClick={onCreateKey} disabled={pending}>
-                  Create an API key for this code
-                </button>
-              )}
-            </div>
-          )}
-          {spec.app.auth === "jwt" && (
-            <p className={styles.hint}>
-              This API needs a login token (JWT) from your identity provider. For a quick test, the Play tab
-              below creates one for you.
-            </p>
-          )}
-
-          <div className={styles.chipRow} role="tablist" aria-label="Language">
-            {LANGS.map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={lang === id}
-                className={lang === id ? styles.chipOn : styles.chip}
-                onClick={() => setLang(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <pre data-testid="use-your-api-snippet">
-            <code>{snippet}</code>
-          </pre>
-          <div className={styles.toolbar}>
-            <button
-              type="button"
-              className={styles.secondary}
-              onClick={async () => setCopied(await copyText(snippet))}
-            >
-              {copied ? "Copied" : "Copy code"}
-            </button>
-            <a
-              className={styles.ghost}
+    <Card data-testid="use-your-api" aria-labelledby="use-your-api-title">
+      <CardHeader
+        id="use-your-api-title"
+        icon="zap"
+        title="Use your API"
+        description={live ? "Copy the code below into a terminal, a script or a notebook." : undefined}
+        actions={
+          live && (
+            <ButtonLink
+              size="sm"
+              variant="secondary"
+              icon="book"
+              external
               href={`${getApiBase()}/apis/${encodeURIComponent(name)}/docs`}
-              target="_blank"
-              rel="noreferrer"
             >
               Interactive docs
-            </a>
-          </div>
-        </>
-      )}
+            </ButtonLink>
+          )
+        }
+      />
+      <CardBody className={styles.useStack}>
+        {!live ? (
+          <EmptyState icon="play" title="Not running yet">
+            Make this API live to get its address and ready-to-run code.
+          </EmptyState>
+        ) : (
+          <>
+            {spec.endpoints.length > 1 && (
+              <label>
+                Endpoint
+                <select value={endpoint?.name} onChange={(e) => setEndpointName(e.target.value)}>
+                  {spec.endpoints.map((e) => (
+                    <option key={e.name} value={e.name}>
+                      {e.name} — {e.path}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {input && (
+              <div>
+                <span className={styles.reviewLabel}>Live address</span>
+                <button
+                  type="button"
+                  className={styles.address}
+                  onClick={async () => toast((await copyText(url)) ? "Address copied." : "Could not copy.")}
+                  title="Copy address"
+                >
+                  <code data-testid="use-your-api-url">{url}</code>
+                  <Icon name="copy" size={14} />
+                </button>
+              </div>
+            )}
 
-      <SafetyChecklist spec={spec} title="Before you share it" />
-      {error && <p className={styles.bannerErr}>{error}</p>}
-    </section>
+            {spec.app.auth === "api_key" &&
+              (apiKey ? (
+                <Banner tone="warning" role="status">
+                  Your new key — shown only once, store it safely:{" "}
+                  <code data-testid="use-your-api-key">{apiKey}</code>
+                </Banner>
+              ) : (
+                <div className={styles.keyRow}>
+                  <span className={styles.muted}>
+                    <Icon name="key" size={14} /> Callers need a key. Create one and it is put into
+                    the code for you.
+                  </span>
+                  <Button size="sm" variant="primary" icon="key" onClick={onCreateKey} busy={pending} disabled={pending}>
+                    Create an API key for this code
+                  </Button>
+                </div>
+              ))}
+            {spec.app.auth === "jwt" && (
+              <Banner tone="accent" role="note">
+                This API needs a login token (JWT) from your identity provider. For a quick test, the
+                “Try it” tab under Endpoints creates one for you.
+              </Banner>
+            )}
+
+            <CodeBlock
+              code={snippet}
+              tabs={LANGS.map(({ id, label }) => ({ id, label }))}
+              tab={lang}
+              onTab={setLang}
+              data-testid="use-your-api-snippet"
+            />
+          </>
+        )}
+        {error && <Banner tone="danger">{error}</Banner>}
+      </CardBody>
+    </Card>
   );
 }

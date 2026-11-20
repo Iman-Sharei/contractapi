@@ -12,7 +12,6 @@ export function endpointActions(c: EditorCore) {
 
   function removeEndpoint() {
     if (!endpoint) return;
-    if (!window.confirm(`Remove endpoint '${endpoint.name}'?`)) return;
     const removed = endpoint.name;
     setSpec((prev) => {
       const next = prev.endpoints.filter((e) => e.name !== removed);

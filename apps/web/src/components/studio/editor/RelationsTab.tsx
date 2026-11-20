@@ -2,7 +2,7 @@
 
 import { tableKey } from "@/lib/tableKey";
 import type { RelationDraft } from "@/lib/types";
-import styles from "../studio.module.css";
+import styles from "./editor.module.css";
 import { slugify, type EditorState } from "./useEditorState";
 
 export function RelationsTab({ s }: { s: EditorState }) {
