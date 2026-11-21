@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 
 from sqlalchemy import MetaData, Table, inspect
@@ -10,6 +11,14 @@ from sqlalchemy.engine import Engine
 from contractapi.domain.sensitive import find_sensitive_columns
 from contractapi.infrastructure.db.dialects import dialect_of, table_schema
 from contractapi.infrastructure.db.engine import create_engine_for_url
+
+# MySQL / SQL Server append storage details ("VARCHAR(200) COLLATE ..."), noise in Studio.
+_TYPE_SUFFIX = re.compile(r"\s+(COLLATE|CHARACTER SET|CHARSET)\b.*$", re.IGNORECASE)
+
+
+def type_label(col_type: object) -> str:
+    """Readable column type: ``VARCHAR(200)``, without collation or charset."""
+    return _TYPE_SUFFIX.sub("", str(col_type))
 
 
 @dataclass
@@ -78,7 +87,7 @@ def _build_table_info(
         columns.append(
             ColumnInfo(
                 name=col_name,
-                type=str(col["type"]),
+                type=type_label(col["type"]),
                 nullable=bool(col.get("nullable", True)),
                 primary_key=col_name in pk,
                 sensitive=bool(find_sensitive_columns([col_name])),

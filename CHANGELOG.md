@@ -18,6 +18,8 @@ All notable changes to this project are documented here.
 - CI runs the same API tests against real PostgreSQL, MySQL and SQL Server
 
 ### Fixes found while testing as a user
+- Studio showed SQL Server and MySQL column types with storage details
+  (`VARCHAR(200) COLLATE SQL_Latin1_General_CP1_CI_AS`); it now shows `VARCHAR(200)`
 - Custom SQL endpoints: get-by-id failed (500) for number ids on Postgres, and for any query
   that has `:params`
 - `?sort=` was silently ignored on endpoints with next-page links; it now answers 400 with

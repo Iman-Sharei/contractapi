@@ -155,6 +155,8 @@ def test_introspect_finds_tables_keys_and_private_columns(db):
     # The schema Studio stores must load again (database name on MySQL, dbo on SQL Server).
     expected = {"postgres": "public", "mysql": "app", "sqlserver": "dbo"}[db]
     assert p["schema"] == expected
+    # Studio shows plain types, not storage details like "COLLATE SQL_Latin1_General_CP1_CI_AS".
+    assert all("COLLATE" not in c["type"].upper() for c in p["columns"])
 
 
 def test_validate_checks_columns_on_every_database(db):
@@ -367,3 +369,13 @@ def test_connection_errors_are_readable_for_every_driver():
     pg = Exception('connection to server at "db" failed: password authentication failed for user "x"')
     assert "password authentication failed" in safe_db_message(pg)
     assert "s3cret" not in safe_db_message(Exception("bad url mysql://u:s3cret@h/db"))
+
+
+def test_type_label_drops_collation_and_charset():
+    from sqlalchemy import String
+
+    from contractapi.infrastructure.db.introspect import type_label
+
+    assert type_label(String(200, collation="SQL_Latin1_General_CP1_CI_AS")) == "VARCHAR(200)"
+    assert type_label("VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin") == "VARCHAR(50)"
+    assert type_label("INTEGER") == "INTEGER"
