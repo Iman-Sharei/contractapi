@@ -4,6 +4,55 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Business rules without code
+All of these are spec options and Studio controls (endpoint → Access & rules → Write rules,
+Settings → Data format). Defaults keep today's behaviour.
+- **Nested writes** (`nested_writes`): create a row together with its `one_to_many` children
+  (a customer with their orders) in one transaction; a failing child saves nothing. Children
+  cannot choose their parent, and inherit the parent's row-level owner
+- **All-or-nothing bulk** (`bulk_atomic`): a bulk create stores every row or none (409/422 with
+  the failing index), instead of keeping the valid rows (207)
+- **Timestamps** (`timestamps.created_at` / `updated_at`): the API sets them on create and
+  update, so `If-Match` on an `updated_at` ETag works even without a database trigger
+- **Default and fixed values** (`defaults`, `fixed_values`): defaults fill omitted fields; fixed
+  values are always written and cannot be sent by callers (also over GraphQL)
+- **Deleted rows**: `soft_delete.restore` adds `POST /{path}/{id}/restore`;
+  `soft_delete.reuse_deleted` lets a create reuse the unique value of a deleted row (its email)
+  by reviving that row. Never another tenant's row
+- **Exact decimals** (`app.decimals: string`): money is returned as `"12.50"` text in REST and
+  GraphQL and accepted as text without float rounding. New wizard APIs with decimal columns use it
+- **Time zones** (`database.timezone`): date-times stored without a zone (MySQL `DATETIME`, SQL
+  Server `datetime2`, Postgres `timestamp`) are returned with their offset; API-set times are
+  stored in that zone. New wizard APIs use `UTC`
+- **Database changes**: a column or table renamed or dropped under a running API now answers
+  `409 schema-changed` with what to do (was a 500). Studio Overview has **Check database
+  changes**, also `GET /studio/specs/{name}/database-changes`: missing fields and new columns
+- **Snowflake / BigQuery nested data**: `VARIANT`, `OBJECT`, `ARRAY`, `STRUCT`, `RECORD` columns are
+  returned as JSON (Snowflake sent JSON text). Listing them as filters, sort fields or writable
+  fails activation with a clear message instead of failing per request
+- Example: `backend/examples/write_rules.yaml`
+
+### Fixes
+- A create or update missing a required (NOT NULL) value answered 409 "already uses one of these
+  values" on Postgres/SQL Server and 500 on MySQL; it is now 422 "a required value is missing"
+- Any database error reaching the API is a Problem Details answer (some read paths returned a
+  plain 500 page)
+- Missing Snowflake / BigQuery / DuckDB driver: Problem Details `dependency-missing` (was a 500)
+- Studio: "Load tables" no longer reset the draft's database type to Postgres
+- One API that could not start (database down, column dropped) took every API on the server down
+  after a restart; now only that API answers 503 `api-unavailable` with what to do, and it is
+  retried every 15 s, so it recovers by itself once the database is back
+- A dropped column in a related table (embedded `orders`) answered 500 "Relation load failed";
+  it is now the same 409 `schema-changed` as for the main table
+- Embedded related rows used their own number/date format (decimals as floats, no time zone);
+  they now follow the API's data format like every other value
+- Saving an API file with a mistake answered 500; it is now 400 `invalid-spec` with the reason
+- SQL Server: the wizard listed (and pre-ticked) Microsoft's own tables of `master`
+  (`spt_values`, `MSreplication_options`, …); system objects are no longer offered
+- Wizard: with more than 5 tables nothing is pre-ticked, so a big database is never published
+  whole by accident
+- GraphQL: fields a caller may not write were silently dropped; they are now refused like in REST
+
 ### MySQL and SQL Server
 - New database types: **MySQL** (8.x, `pip install 'contractapi[mysql]'`) and **SQL Server**
   (2019/2022, `pip install 'contractapi[sqlserver]'`, no ODBC needed). Every feature works the

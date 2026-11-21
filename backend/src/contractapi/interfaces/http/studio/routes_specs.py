@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from contractapi.application.openapi_diff import diff_openapi
+from contractapi.application.schema_drift import check_database_changes
 from contractapi.core.errors import AppError
 from contractapi.infrastructure.db.errors import safe_db_message
 from contractapi.infrastructure.persistence import spec_repo
@@ -16,7 +17,9 @@ from contractapi.interfaces.http.studio.presenters import (
     _spec_yaml,
 )
 from contractapi.interfaces.http.studio.schemas import (
+    DatabaseChangesResponse,
     DiffOpenApiRequest,
+    ProblemDetails,
     SaveSpecRequest,
 )
 
@@ -47,6 +50,16 @@ def studio_get_spec(name: str) -> dict[str, Any]:
         "spec": _spec_json(spec),
         "yaml": _spec_yaml(spec),
     }
+
+
+@router.get(
+    "/specs/{name}/database-changes",
+    response_model=DatabaseChangesResponse,
+    summary="Compare the saved API with its database now (removed/renamed columns, new columns)",
+    responses={code: {"model": ProblemDetails} for code in (400, 401, 404)},
+)
+def studio_database_changes(name: str) -> dict[str, Any]:
+    return check_database_changes(spec_repo.read_spec(name))
 
 
 @router.delete("/specs/{name}")

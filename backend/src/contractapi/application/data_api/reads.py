@@ -39,7 +39,7 @@ from contractapi.domain.models.spec import (
     PaginationMode,
 )
 from contractapi.infrastructure.cache_store import response_cache
-from contractapi.infrastructure.db.errors import db_error
+from contractapi.infrastructure.db.errors import db_error, is_schema_change
 from contractapi.infrastructure.observability import metrics
 
 
@@ -214,15 +214,7 @@ def _add_list(
 
         active_relations = _select_relations(endpoint, include or expand)
         if active_relations and items:
-            try:
-                load_relations(engine, metadata, active_relations, items)
-            except Exception as exc:
-                raise AppError(
-                    type_="https://contractapi.dev/problems/relation-error",
-                    title="Relation load failed",
-                    status=500,
-                    detail="Nested data could not be loaded. Check the relation settings in Studio.",
-                ) from exc
+            _load_relations(engine, metadata, active_relations, items)
 
         projected = [
             _project_fields(i, fields, [r.name for r in active_relations]) for i in items
@@ -328,15 +320,7 @@ def _add_detail(
             # projected view — otherwise relations/RBAC/sparse fields break concurrency control.
             etag = _etag_for(item, endpoint)
             if endpoint.relations:
-                try:
-                    load_relations(engine, metadata, endpoint.relations, [item])
-                except SQLAlchemyError as exc:
-                    raise AppError(
-                        type_="https://contractapi.dev/problems/relation-error",
-                        title="Relation load failed",
-                        status=500,
-                        detail="Nested data could not be loaded. Check the relation settings in Studio.",
-                    ) from exc
+                _load_relations(engine, metadata, endpoint.relations, [item])
             projected = _project_fields(item, fields, rel_names)
             if spec.app.cache.enabled:
                 response_cache.set(
@@ -362,3 +346,18 @@ def _add_detail(
         summary=f"Get {endpoint.name}",
         name=f"get_{endpoint.name}",
     )
+
+
+def _load_relations(engine, metadata, relations, items) -> None:  # type: ignore[no-untyped-def]
+    """Embed related rows; a renamed/dropped related column is a schema change, not a 500."""
+    try:
+        load_relations(engine, metadata, relations, items)
+    except Exception as exc:
+        if isinstance(exc, SQLAlchemyError) and is_schema_change(exc):
+            raise db_error(exc) from exc
+        raise AppError(
+            type_="https://contractapi.dev/problems/relation-error",
+            title="Relation load failed",
+            status=500,
+            detail="Nested data could not be loaded. Check the relation settings in Studio.",
+        ) from exc

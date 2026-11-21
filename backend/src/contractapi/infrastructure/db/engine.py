@@ -64,10 +64,7 @@ def create_duckdb_engine(url: str) -> Engine:
       duckdb:///./analytics.duckdb
       duckdb:////abs/path/warehouse.duckdb
     """
-    try:
-        import duckdb  # noqa: F401
-    except ImportError as exc:
-        raise RuntimeError("Install DuckDB support with: pip install 'contractapi[duckdb]'") from exc
+    _require("duckdb", "duckdb", "DuckDB")
 
     # Accept raw paths and duckdb:// URLs.
     # :memory: uses StaticPool so every checkout hits the same in-process DB.
@@ -97,12 +94,7 @@ def create_duckdb_engine(url: str) -> Engine:
 
 def create_snowflake_engine(url: str) -> Engine:
     """Snowflake via snowflake-sqlalchemy. URL: snowflake://user:pass@account/db/schema."""
-    try:
-        import snowflake.sqlalchemy  # noqa: F401
-    except ImportError as exc:
-        raise RuntimeError(
-            "Install Snowflake support with: pip install 'contractapi[snowflake]'"
-        ) from exc
+    _require("snowflake.sqlalchemy", "snowflake", "Snowflake")
     return create_engine(url)
 
 
@@ -113,12 +105,7 @@ def create_bigquery_engine(url: str) -> Engine:
       bigquery://project/dataset
       bigquery://project/dataset?credentials_path=/path/key.json
     """
-    try:
-        import sqlalchemy_bigquery  # noqa: F401
-    except ImportError as exc:
-        raise RuntimeError(
-            "Install BigQuery support with: pip install 'contractapi[bigquery]'"
-        ) from exc
+    _require("sqlalchemy_bigquery", "bigquery", "BigQuery")
     return create_engine(url)
 
 

@@ -16,7 +16,13 @@ import {
 } from "@/lib/dbUrl";
 import { DEFAULT_API_VERSION, WRITE_METHODS } from "@/lib/labels";
 import { defaultPath } from "@/lib/pathRules";
-import { defaultSafeColumns, ensurePrimaryKey } from "@/lib/pickColumns";
+import {
+  AUTO_PICK_MAX_TABLES,
+  defaultSafeColumns,
+  ensurePrimaryKey,
+  hasDecimalColumns,
+  initialPicks,
+} from "@/lib/pickColumns";
 import { tableKey } from "@/lib/tableKey";
 import type { ApiSpecDraft, EndpointDraft, TableInfo } from "@/lib/types";
 import { ALL_FILTER_OPS } from "@/lib/types";
@@ -123,7 +129,8 @@ export default function NewApiWizardPage() {
       });
     }
     return {
-      database: { url: dbUrl, driver: kind },
+      // New APIs report stored date-times with their offset (UTC unless changed in Settings).
+      database: { url: dbUrl, driver: kind, timezone: "UTC" },
       app: {
         title,
         version: DEFAULT_API_VERSION,
@@ -135,6 +142,8 @@ export default function NewApiWizardPage() {
         idempotency: { enabled: true, required_for_writes: false, ttl_seconds: 86400 },
         rate_limit: { enabled: true, requests_per_minute: 120 },
         audit_enabled: true,
+        // Money-like columns keep every digit ("12.50") instead of becoming lossy JSON numbers.
+        decimals: hasDecimalColumns(tables, pickedKeys, pickedColumns) ? "string" : "number",
         compression: true,
         tracing: true,
         jwt: {
@@ -186,13 +195,12 @@ export default function NewApiWizardPage() {
       try {
         const result = await introspectDatabase(dbUrl, effectiveSchema);
         setTables(result.tables);
-        const next: Record<string, string[]> = {};
-        for (const t of result.tables) next[tableKey(t)] = defaultSafeColumns(t);
-        setPickedColumns(next);
+        setPickedColumns(initialPicks(result.tables));
         setExpanded(result.tables[0] ? tableKey(result.tables[0]) : null);
         setMessage(
           result.count
-            ? `Connected — found ${result.count} table${result.count === 1 ? "" : "s"}.`
+            ? `Connected — found ${result.count} table${result.count === 1 ? "" : "s"}.` +
+                (result.count > AUTO_PICK_MAX_TABLES ? " Tick the ones you want to share." : "")
             : "Connected, but this schema has no tables.",
         );
         setStep(1);

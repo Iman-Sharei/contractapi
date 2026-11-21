@@ -26,3 +26,14 @@ endpoints:
       mode: offset
       default_limit: 50
       max_limit: 500
+  # VARIANT / OBJECT / ARRAY columns are returned as real JSON (not JSON text).
+  # They cannot be filters, sort fields or writable: activation says so if listed there.
+  - name: events
+    path: /events
+    table: EVENTS
+    schema: PUBLIC
+    primary_key: EVENT_ID
+    fields: [EVENT_ID, KIND, PAYLOAD]   # PAYLOAD is a VARIANT column
+    filters: [KIND]
+    sortable: [EVENT_ID]
+    pagination: {mode: offset}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from contractapi.domain.models.aggregate import (
@@ -25,6 +27,7 @@ from contractapi.domain.models.rules import (
     _assert_safe_select,
     suggest_path,
 )
+from contractapi.domain.models.write_options import TimestampsConfig, check_write_rules
 from contractapi.domain.sensitive import WRITE_METHODS, assert_fields_safe
 
 
@@ -79,6 +82,15 @@ class EndpointSpec(BaseModel):
     )
     validations: list[FieldValidation] = Field(default_factory=list)
     bulk_enabled: bool = True
+    # true: a bulk create stores all rows or none (one transaction); false: per-row (HTTP 207).
+    bulk_atomic: bool = False
+    timestamps: TimestampsConfig | None = None
+    # Values used on create when the client leaves the column out.
+    defaults: dict[str, Any] = Field(default_factory=dict)
+    # Values the API always writes (create and update); clients cannot change them.
+    fixed_values: dict[str, Any] = Field(default_factory=dict)
+    # one_to_many relations whose children can be created with the parent, in one transaction.
+    nested_writes: list[str] = Field(default_factory=list)
     async_writes: bool = False
     deprecation: DeprecationConfig = Field(default_factory=DeprecationConfig)
     description: str | None = None
@@ -226,6 +238,7 @@ class EndpointSpec(BaseModel):
                 )
         if self.allows_writes and not self.writable_fields:
             self.writable_fields = [f for f in self.fields if f != self.primary_key]
+        check_write_rules(self)
         if (
             self.pagination.enabled
             and self.pagination.mode == PaginationMode.CURSOR

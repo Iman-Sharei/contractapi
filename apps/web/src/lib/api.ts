@@ -4,6 +4,7 @@ import type {
   ActiveApiMount,
   ActiveInfo,
   ApiSpecDraft,
+  DatabaseChanges,
   DatabaseDriver,
   OpenApiDiff,
   SpecListItem,
@@ -189,6 +190,10 @@ export async function loadSpec(name: string) {
   return studioFetch<{ name: string; spec: ApiSpecDraft; yaml: string }>(
     `/specs/${encodeURIComponent(name)}`,
   );
+}
+
+export async function checkDatabaseChanges(name: string) {
+  return studioFetch<DatabaseChanges>(`/specs/${encodeURIComponent(name)}/database-changes`);
 }
 
 export async function diffOpenApi(before: object, after: object) {

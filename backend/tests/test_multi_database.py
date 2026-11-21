@@ -33,6 +33,7 @@ from contractapi.domain.models.spec import DatabaseConfig, JwtConfig, parse_spec
 from contractapi.infrastructure.cache_store import response_cache
 from contractapi.infrastructure.db.engine import create_engine_for_config
 from contractapi.infrastructure.security.jwt_tokens import issue_token
+from contractapi.infrastructure.security.rate_limit import limiter
 
 URLS = {
     "postgres": os.getenv("MDB_POSTGRES_URL", "postgresql://postgres:postgres@localhost:5433/app"),
@@ -53,6 +54,7 @@ people = Table(
     Column("score", Integer, nullable=False, server_default="0"),
     Column("deleted_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime),  # no time zone (MySQL DATETIME, SQL Server datetime2)
 )
 orders = Table(
     "mdb_orders",
@@ -98,6 +100,7 @@ def db(request, monkeypatch, tmp_path):
     monkeypatch.setenv("JWT_SECRET", "multi-database-test-secret-0123456789abcdef")
     get_settings.cache_clear()
     response_cache.clear()
+    limiter._hits.clear()  # each test starts with a fresh rate-limit budget
     engine = _engine(name)
     meta.drop_all(engine)
     meta.create_all(engine)
@@ -155,6 +158,8 @@ def test_introspect_finds_tables_keys_and_private_columns(db):
     # The schema Studio stores must load again (database name on MySQL, dbo on SQL Server).
     expected = {"postgres": "public", "mysql": "app", "sqlserver": "dbo"}[db]
     assert p["schema"] == expected
+    # SQL Server's own tables in master (spt_values, MSreplication_options) are never offered.
+    assert not [n for n in tables if n.startswith(("spt_", "MSreplication"))]
     # Studio shows plain types, not storage details like "COLLATE SQL_Latin1_General_CP1_CI_AS".
     assert all("COLLATE" not in c["type"].upper() for c in p["columns"])
 

@@ -72,3 +72,27 @@ class SqlPreviewRequest(BaseModel):
 
 class DumpYamlRequest(BaseModel):
     spec: dict[str, Any]
+
+
+class EndpointDatabaseChange(BaseModel):
+    name: str
+    table: str | None = None
+    status: str = Field(description="ok | changed | missing_table | skipped")
+    missing: list[str] = Field(default_factory=list)
+    new_columns: list[str] = Field(default_factory=list, description="Not shared yet; sensitive columns left out")
+    detail: str | None = None
+
+
+class DatabaseChangesResponse(BaseModel):
+    ok: bool
+    endpoints: list[EndpointDatabaseChange]
+
+
+class ProblemDetails(BaseModel):
+    """RFC 9457 error body (application/problem+json)."""
+
+    type: str
+    title: str
+    status: int
+    detail: str | None = None
+    instance: str | None = None

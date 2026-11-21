@@ -19,7 +19,9 @@ endpoints:
     schema: analytics
     methods: [GET]
     primary_key: event_id
-    fields: [event_id, event_type, ts]
+    # STRUCT / RECORD / ARRAY columns (here: device) come back as nested JSON objects/lists;
+    # they can be returned but not filtered, sorted or written.
+    fields: [event_id, event_type, ts, device]
     filters: [event_type]
     sortable: [ts]
     pagination:

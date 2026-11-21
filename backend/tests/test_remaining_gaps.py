@@ -13,6 +13,7 @@ from contractapi.application.dbt_import import import_dbt_payload
 from contractapi.application.git_browser import git_status, list_branches
 from contractapi.application.graphql_facade import graphql_available, mount_graphql
 from contractapi.core.config import Settings
+from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import (
     AggregateConfig,
     AggregateFilter,
@@ -55,11 +56,12 @@ def test_compile_aggregate_where_having_windows():
 def test_warehouse_driver_enum_and_missing_extra():
     assert DatabaseDriver.SNOWFLAKE.value == "snowflake"
     assert DatabaseDriver.BIGQUERY.value == "bigquery"
-    with pytest.raises(RuntimeError, match="snowflake"):
+    # Missing extra → Problem Details "dependency-missing" (400), never a raw 500.
+    with pytest.raises(AppError, match="snowflake"):
         create_engine_for_config(
             DatabaseConfig(url="snowflake://u:p@a/d/s", driver=DatabaseDriver.SNOWFLAKE)
         )
-    with pytest.raises(RuntimeError, match="bigquery"):
+    with pytest.raises(AppError, match="bigquery"):
         create_engine_for_config(
             DatabaseConfig(url="bigquery://proj/ds", driver=DatabaseDriver.BIGQUERY)
         )

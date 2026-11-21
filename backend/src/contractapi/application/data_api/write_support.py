@@ -6,15 +6,22 @@ from typing import Any
 
 from fastapi import Request
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, ValidationError, create_model
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import Table
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from contractapi.application.data_api.common import (
-    _model_name,
-    _python_type,
     _row_to_dict,
+)
+from contractapi.application.data_api.write_models import (  # noqa: F401 — re-exported
+    _build_create_model,
+    _build_write_models,
+)
+from contractapi.application.data_api.write_rules import (
+    NestedTables,
+    insert_children,
+    revive_deleted,
 )
 from contractapi.core.errors import (
     AppError,
@@ -24,7 +31,7 @@ from contractapi.domain.models.spec import (
     EndpointSpec,
 )
 from contractapi.infrastructure.db.dialects import insert_returning
-from contractapi.infrastructure.db.errors import db_error
+from contractapi.infrastructure.db.errors import db_error, is_missing_value, missing_value_error
 from contractapi.infrastructure.idempotency import (
     IdempotentRecord,
     fingerprint_payload,
@@ -32,33 +39,6 @@ from contractapi.infrastructure.idempotency import (
     make_scope_key,
     serialize_json_body,
 )
-
-
-def _build_write_models(endpoint: EndpointSpec, table: Table) -> tuple[type[BaseModel], type[BaseModel], type[BaseModel]]:
-    read_fields: dict[str, Any] = {}
-    for name in endpoint.fields:
-        col = table.c[name]
-        py = _python_type(col.type)
-        read_fields[name] = (py | None, None) if col.nullable and name != endpoint.primary_key else (py, ...)
-    item = create_model(
-        f"{_model_name(endpoint.name)}Item",
-        __config__=ConfigDict(from_attributes=True, extra="allow"),
-        **read_fields,
-    )
-    listing = create_model(f"{_model_name(endpoint.name)}List", items=(list[dict], ...))
-    # All writable fields optional so PATCH can send partial bodies;
-    # DB NOT NULL / constraints still enforced on insert/update.
-    write_fields: dict[str, Any] = {}
-    for name in endpoint.writable_fields:
-        col = table.c[name]
-        py = _python_type(col.type)
-        write_fields[name] = (py | None, None)
-    write_model = create_model(
-        f"{_model_name(endpoint.name)}Write",
-        __config__=ConfigDict(extra="forbid"),
-        **write_fields,
-    )
-    return item, listing, write_model
 
 
 def _inject_row_level(endpoint: EndpointSpec, request: Request, payload: dict[str, Any]) -> dict[str, Any]:
@@ -237,22 +217,56 @@ IN_USE_DETAIL = (
 )
 
 
+def conflict_error(exc: BaseException) -> AppError:
+    """409 for duplicate values / missing referenced rows; 422 when a required value is missing."""
+    if is_missing_value(exc):
+        return missing_value_error()
+    return AppError(
+        type_="https://contractapi.dev/problems/conflict",
+        title="Conflict",
+        status=409,
+        detail=CONFLICT_DETAIL,
+    )
+
+
 def _created_location(endpoint: EndpointSpec, item_id: Any) -> str:
     # Relative reference (RFC 9110 §10.2.2): resolves against the collection URL under any mount.
     return f"{endpoint.path.rsplit('/', 1)[-1]}/{item_id}"
 
 
-def _do_insert(engine: Engine, table: Table, endpoint: EndpointSpec, payload: dict[str, Any]) -> dict[str, Any]:
+def _do_insert(
+    engine: Engine,
+    table: Table,
+    endpoint: EndpointSpec,
+    payload: dict[str, Any],
+    *,
+    children: dict[str, list] | None = None,
+    nested: NestedTables | None = None,
+    unique_sets: list[tuple[str, ...]] = (),  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """INSERT (plus nested children) in one transaction. With soft_delete.reuse_deleted, a
+    unique clash with a deleted row revives that row instead of failing."""
+
+    def write(conn: Any, row: Any) -> dict[str, Any]:
+        result = _row_to_dict(row, endpoint.fields)
+        if children:
+            result.update(insert_children(conn, endpoint, {**payload, **dict(row)}, children, nested or {}))
+        return result
+
     try:
-        with engine.begin() as conn:
-            row = insert_returning(conn, table, payload, endpoint.fields, endpoint.primary_key)
+        try:
+            with engine.begin() as conn:
+                return write(conn, insert_returning(conn, table, payload, endpoint.fields, endpoint.primary_key))
+        except IntegrityError:
+            sd = endpoint.soft_delete
+            if not (sd and sd.reuse_deleted and unique_sets):
+                raise
+            with engine.begin() as conn:
+                row = revive_deleted(conn, table, endpoint, payload, list(unique_sets))
+                if row is None:
+                    raise
+                return write(conn, row)
     except IntegrityError as exc:
-        raise AppError(
-            type_="https://contractapi.dev/problems/conflict",
-            title="Conflict",
-            status=409,
-            detail=CONFLICT_DETAIL,
-        ) from exc
+        raise conflict_error(exc) from exc
     except SQLAlchemyError as exc:
         raise db_error(exc) from exc
-    return _row_to_dict(row, endpoint.fields)

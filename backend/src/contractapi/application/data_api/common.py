@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime
+from contextvars import ContextVar
+from dataclasses import dataclass
+from datetime import date, datetime, tzinfo
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -65,10 +67,37 @@ def _python_type(sa_type: Any) -> type:
     return str
 
 
+@dataclass(frozen=True)
+class OutputFormat:
+    """How values are written to JSON for one API (spec `app.decimals`, `database.timezone`)."""
+
+    decimals: str = "number"
+    tz: tzinfo | None = None
+
+
+# Set per request by OutputFormatMiddleware. ponytail: async-job results built on a worker
+# thread use the default format; pass the format explicitly if that ever matters.
+OUTPUT_FORMAT: ContextVar[OutputFormat] = ContextVar("contractapi_output", default=OutputFormat())  # noqa: B039 — frozen
+
+
+def output_format_for(spec: ApiSpec) -> OutputFormat:
+    from zoneinfo import ZoneInfo
+
+    tz = spec.database.timezone
+    return OutputFormat(decimals=spec.app.decimals, tz=ZoneInfo(tz) if tz else None)
+
+
 def _serialize(value: Any) -> Any:
     if isinstance(value, Decimal):
+        if OUTPUT_FORMAT.get().decimals == "string":
+            return format(value, "f")  # exact digits, never "1E+2"
         return float(value)
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, datetime):
+        tz = OUTPUT_FORMAT.get().tz
+        if tz is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=tz)
+        return value.isoformat()
+    if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, UUID):
         return str(value)

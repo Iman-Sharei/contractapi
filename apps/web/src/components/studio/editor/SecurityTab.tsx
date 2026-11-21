@@ -9,6 +9,7 @@ import { PolicySection } from "./PolicySection";
 import { RbacSection } from "./RbacSection";
 import { ValidationsSection } from "./ValidationsSection";
 import { WebhooksSection } from "./WebhooksSection";
+import { WriteRulesSection } from "./WriteRulesSection";
 
 export function SecurityTab({ s }: { s: EditorState }) {
   const { spec, endpoint } = s;
@@ -18,6 +19,7 @@ export function SecurityTab({ s }: { s: EditorState }) {
     <div className={styles.editorBlock}>
       <SafetyChecklist spec={spec} />
       <AccessSection s={s} />
+      <WriteRulesSection s={s} />
       <ValidationsSection s={s} />
 
       <PolicySection s={s} />

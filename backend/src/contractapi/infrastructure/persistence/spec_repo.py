@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import yaml
+from pydantic import ValidationError
 
 from contractapi.core.config import get_settings
 from contractapi.core.errors import AppError
@@ -82,7 +83,20 @@ def save_spec(name: str, raw: dict) -> ApiSpec:
 
     name = _safe_name(name)
     # Never write a literal password to (git-friendly) YAML: move it to the secret store.
-    spec = parse_spec(secure_spec_payload(raw, name))
+    try:
+        spec = parse_spec(secure_spec_payload(raw, name))
+    except ValidationError as exc:
+        errors = [
+            f"{'.'.join(str(x) for x in e.get('loc', ()))}: {str(e.get('msg', '')).removeprefix('Value error, ')}"
+            for e in exc.errors()
+        ]
+        raise AppError(
+            type_="https://contractapi.dev/problems/invalid-spec",
+            title="Invalid specification",
+            status=400,
+            detail=errors[0] if len(errors) == 1 else "The API file has problems: " + "; ".join(errors),
+            extensions={"errors": errors},
+        ) from exc
     path = specs_dir() / f"{name}.yaml"
     # Snapshot previous version before overwrite
     if path.exists():

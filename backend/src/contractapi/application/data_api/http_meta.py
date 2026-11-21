@@ -80,3 +80,20 @@ def _record_metrics(method: str, path: str, status: int, duration: float) -> Non
     labels = {"method": method, "path": path, "status": str(status)}
     metrics.incr("contractapi_http_requests_total", labels=labels)
     metrics.observe("contractapi_http_request_duration_seconds", duration, labels={"method": method, "path": path})
+
+
+class OutputFormatMiddleware:
+    """Pure ASGI: makes the API's value format (decimals, time zone) visible to serializers."""
+
+    def __init__(self, app: Any, fmt: Any) -> None:
+        self.app = app
+        self.fmt = fmt
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        from contractapi.application.data_api.common import OUTPUT_FORMAT
+
+        token = OUTPUT_FORMAT.set(self.fmt)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            OUTPUT_FORMAT.reset(token)

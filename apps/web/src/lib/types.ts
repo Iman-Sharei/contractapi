@@ -49,7 +49,19 @@ export type RowLevelConfig = {
 
 export type SoftDeleteConfig = {
   column: string;
+  /** POST /{path}/{id}/restore brings a deleted row back (needs DELETE allowed). */
+  restore?: boolean;
+  /** A create that clashes with a deleted row's unique value revives that row instead of 409. */
+  reuse_deleted?: boolean;
 };
+
+export type TimestampsConfig = {
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+/** Values written by the API: text, numbers, true/false or null. */
+export type ColumnValues = Record<string, string | number | boolean | null>;
 
 export type DeprecationConfig = {
   deprecated: boolean;
@@ -155,6 +167,13 @@ export type EndpointDraft = {
   etag_field?: string | null;
   validations?: FieldValidation[];
   bulk_enabled?: boolean;
+  /** Bulk create stores all rows or none. */
+  bulk_atomic?: boolean;
+  timestamps?: TimestampsConfig | null;
+  defaults?: ColumnValues;
+  fixed_values?: ColumnValues;
+  /** one_to_many relations whose children are created together with the parent. */
+  nested_writes?: string[];
   async_writes?: boolean;
   deprecation?: DeprecationConfig;
   description?: string;
@@ -167,7 +186,7 @@ export type EndpointDraft = {
 export type DatabaseDriver = "postgres" | "mysql" | "sqlserver" | "duckdb" | "snowflake" | "bigquery";
 
 export type ApiSpecDraft = {
-  database: { url: string; driver?: DatabaseDriver };
+  database: { url: string; driver?: DatabaseDriver; timezone?: string | null };
   app: {
     title: string;
     version: string;
@@ -180,6 +199,8 @@ export type ApiSpecDraft = {
     idempotency?: { enabled: boolean; required_for_writes?: boolean; ttl_seconds?: number };
     rate_limit: { enabled: boolean; requests_per_minute: number };
     audit_enabled?: boolean;
+    /** "string": decimals as exact text ("12.50"); "number": JSON numbers. */
+    decimals?: "number" | "string";
     compression?: boolean;
     tracing?: boolean;
     ip_allowlist?: string[];
@@ -274,3 +295,14 @@ export const ALL_FILTER_OPS = [
 ] as const;
 
 export const ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+
+export type EndpointDatabaseChange = {
+  name: string;
+  table: string | null;
+  status: "ok" | "changed" | "missing_table" | "skipped";
+  missing: string[];
+  new_columns: string[];
+  detail: string | null;
+};
+
+export type DatabaseChanges = { ok: boolean; endpoints: EndpointDatabaseChange[] };

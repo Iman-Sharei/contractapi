@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import Body, Request
@@ -23,8 +22,8 @@ from contractapi.application.data_api.common import (
     _row_to_dict,
     _visible_fields,
 )
+from contractapi.application.data_api.write_rules import db_timezone, for_update, now_for
 from contractapi.application.data_api.write_support import (
-    CONFLICT_DETAIL,
     IN_USE_DETAIL,
     _bind_body,
     _idempotency_begin,
@@ -32,6 +31,7 @@ from contractapi.application.data_api.write_support import (
     _idempotency_replay_or_conflict,
     _inject_row_level,
     _validate_write_body,
+    conflict_error,
 )
 from contractapi.application.query_filters import combine
 from contractapi.application.row_security import apply_security_clauses
@@ -49,6 +49,7 @@ from contractapi.infrastructure.webhooks import dispatch_webhooks
 
 def _add_update(router, engine, table, endpoint, spec, item_model, write_model, tags) -> None:  # type: ignore[no-untyped-def]
     pk = endpoint.primary_key
+    tz = db_timezone(spec)
     pk_type = _python_type(table.c[pk].type)
 
     def _update(request: Request, item_id: Any, body: Any, method: str) -> Any:
@@ -98,16 +99,12 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
         _check_if_match(request, _etag_for(current, endpoint))
 
         clauses = apply_security_clauses([table.c[pk] == item_id], table, endpoint, request)
+        values = for_update(endpoint, table, payload, tz)
         try:
             with engine.begin() as conn:
-                row = update_returning(conn, table, combine(clauses), payload, endpoint.fields)
+                row = update_returning(conn, table, combine(clauses), values, endpoint.fields)
         except IntegrityError as exc:
-            raise AppError(
-                type_="https://contractapi.dev/problems/conflict",
-                title="Conflict",
-                status=409,
-                detail=CONFLICT_DETAIL,
-            ) from exc
+            raise conflict_error(exc) from exc
         except SQLAlchemyError as exc:
             raise db_error(exc) from exc
         if row is None:
@@ -169,6 +166,7 @@ def _add_update(router, engine, table, endpoint, spec, item_model, write_model, 
 
 def _add_delete(router, engine, table, endpoint, spec, tags) -> None:  # type: ignore[no-untyped-def]
     pk = endpoint.primary_key
+    tz = db_timezone(spec)
     pk_type = _python_type(table.c[pk].type)
 
     def delete_item(request: Request, item_id: Any) -> Response:
@@ -201,7 +199,7 @@ def _add_delete(router, engine, table, endpoint, spec, tags) -> None:  # type: i
                     stmt = (
                         table.update()
                         .where(where)
-                        .values({endpoint.soft_delete.column: datetime.now(timezone.utc)})
+                        .values({endpoint.soft_delete.column: now_for(table, endpoint.soft_delete.column, tz)})
                     )
                     result = conn.execute(stmt)
                 else:

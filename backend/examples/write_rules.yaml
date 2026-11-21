@@ -1,0 +1,47 @@
+# Business rules without code, on the demo Postgres (examples/init.sql).
+# Every rule below is also a control in Studio: endpoint → Access & rules → Write rules,
+# and Settings → Data format.
+database:
+  url: postgresql://postgres:postgres@localhost:5433/app
+  timezone: UTC                 # date-times stored without a zone are returned with +00:00
+app:
+  title: Shop API with write rules
+  version: 1.0.0
+  read_only: false
+  auth: api_key
+  api_prefix: /v1
+  decimals: string              # 120.50 is returned as "120.50", never 120.5
+endpoints:
+  - name: customers
+    path: /customers
+    table: customers
+    fields: [id, name, email, updated_at, created_at]
+    methods: [GET, POST, PATCH, DELETE]
+    writable_fields: [name, email]
+    filters: [name, email]
+    sortable: [id, name]
+    etag_field: updated_at
+    timestamps:
+      updated_at: updated_at    # set by the API on every create/update: If-Match always works
+    soft_delete:
+      column: deleted_at
+      restore: true             # POST /v1/customers/{id}/restore
+      reuse_deleted: true       # a deleted customer's email can be used again
+    bulk_atomic: true           # POST /v1/customers/bulk stores all rows or none
+    relations:
+      - name: orders
+        table: orders
+        local_key: id
+        foreign_key: customer_id
+        fields: [id, total, status]
+    nested_writes: [orders]     # create a customer together with their orders, in one transaction
+  - name: orders
+    path: /orders
+    table: orders
+    fields: [id, customer_id, total, status, created_at]
+    methods: [GET, POST, PATCH]
+    writable_fields: [customer_id, total, status]
+    defaults:
+      status: pending           # used when the caller leaves status out
+    filters: [status, customer_id]
+    sortable: [id]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import FastAPI
@@ -24,13 +25,15 @@ from contractapi.core.errors import (
     problem_response,
     validation_exception_handler,
 )
-from contractapi.core.logging import setup_logging
+from contractapi.core.logging import get_logger, setup_logging
 from contractapi.infrastructure.db.engine import create_engine_for_config
 from contractapi.interfaces.http.middleware.body_limit import BodySizeLimitMiddleware
 from contractapi.interfaces.http.middleware.request_id import RequestIdMiddleware
 from contractapi.interfaces.http.middleware.security_headers import SecurityHeadersMiddleware
 from contractapi.interfaces.http.studio.oidc_router import router as studio_oidc_router
 from contractapi.interfaces.http.studio.router import router as studio_router
+
+_log = get_logger("contractapi.apis")
 
 
 def _attach_handlers(app: FastAPI) -> FastAPI:
@@ -40,21 +43,56 @@ def _attach_handlers(app: FastAPI) -> FastAPI:
     return app
 
 
+RETRY_SECONDS = 15  # a broken API is rebuilt at most this often (DB back up, columns restored)
+
+
+def _unavailable_app(name: str) -> ASGIApp:
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        resp = problem_response(
+            type_="https://contractapi.dev/problems/api-unavailable",
+            title="API unavailable",
+            status=503,
+            detail=(
+                f"API '{name}' could not start: its database cannot be reached or no longer "
+                "matches it (a table or column it uses is missing). An admin can open it in "
+                "Studio, use 'Check database changes', and make it live again."
+            ),
+        )
+        resp.headers["Retry-After"] = str(RETRY_SECONDS)
+        await resp(scope, receive, send)
+
+    return app
+
+
+def _build_api(name: str, spec: Any) -> tuple[ASGIApp, float | None]:
+    """The API's app, or a 503 stand-in plus the failure time; one broken API never takes
+    down the others."""
+    try:
+        return _attach_handlers(create_data_app(spec)), None
+    except Exception as exc:  # noqa: BLE001 — reported to callers as 503, details in the log
+        _log.warning("API %s could not start: %s", name, exc)
+        return _unavailable_app(name), time.monotonic()
+
+
+def _due(failed_at: float | None) -> bool:
+    return failed_at is not None and time.monotonic() - failed_at >= RETRY_SECONDS
+
+
 class DataPlaneASGI:
     """Lazy ASGI mount: serves the primary ApiSpec under /data."""
 
     def __init__(self) -> None:
         self._app: ASGIApp | None = None
         self._key: Any = None
+        self._failed_at: float | None = None
 
     def _ensure(self) -> ASGIApp | None:
         spec = spec_store.active
         if spec is None:
             return None
         key = (spec_store.active_name, id(spec))
-        if self._app is None or self._key != key:
-            data_app = _attach_handlers(create_data_app(spec))
-            self._app = data_app
+        if self._app is None or self._key != key or _due(self._failed_at):
+            self._app, self._failed_at = _build_api(spec_store.active_name or "data", spec)
             self._key = key
         return self._app
 
@@ -93,16 +131,23 @@ class MultiApiASGI:
 
     def __init__(self) -> None:
         self._apps: dict[str, ASGIApp] = {}
+        self._failed: dict[str, float] = {}
         self._rev: Any = None
 
     def _sync(self) -> None:
         rev = spec_store.revision()
+        specs = spec_store.all()
         if rev == self._rev:
-            return
-        self._rev = rev
-        self._apps = {
-            name: _attach_handlers(create_data_app(spec)) for name, spec in spec_store.all().items()
-        }
+            names = [n for n, at in self._failed.items() if _due(at) and n in specs]
+        else:
+            self._rev = rev
+            self._apps, self._failed = {}, {}
+            names = list(specs)
+        for name in names:
+            self._apps[name], failed_at = _build_api(name, specs[name])
+            self._failed.pop(name, None)
+            if failed_at is not None:
+                self._failed[name] = failed_at
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":

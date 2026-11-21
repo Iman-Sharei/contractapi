@@ -122,6 +122,10 @@ class RowLevelConfig(BaseModel):
 class SoftDeleteConfig(BaseModel):
     column: str = "deleted_at"
     # On DELETE set to NOW(); list/detail exclude non-null.
+    # POST /{path}/{id}/restore brings a deleted row back (needs DELETE allowed).
+    restore: bool = False
+    # A create that clashes on a unique value with a deleted row revives that row instead of 409.
+    reuse_deleted: bool = False
 
 
 class DeprecationConfig(BaseModel):

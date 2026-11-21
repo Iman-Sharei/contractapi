@@ -16,17 +16,10 @@ _IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 def _ser(value: Any) -> Any:
-    from datetime import date, datetime
-    from decimal import Decimal
-    from uuid import UUID
+    """Same value format as the parent rows (decimals, time zone): one shared serializer."""
+    from contractapi.application.data_api.common import _serialize
 
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, UUID):
-        return str(value)
-    return value
+    return _serialize(value)
 
 
 def _q(name: str) -> str:

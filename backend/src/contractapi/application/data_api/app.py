@@ -7,14 +7,17 @@ from typing import Any
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import MetaData, Table, text
+from sqlalchemy import MetaData, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from contractapi.application.data_api.common import (
     logger,
+    output_format_for,
 )
 from contractapi.application.data_api.http_meta import (
+    OutputFormatMiddleware,
     _decorate_response,
     _effective_path,
     _ensure_trace,
@@ -22,15 +25,7 @@ from contractapi.application.data_api.http_meta import (
     _job_owner,
     _record_metrics,
 )
-from contractapi.application.data_api.reads import (
-    _add_detail,
-    _add_list,
-)
-from contractapi.application.data_api.updates import _add_delete, _add_update
-from contractapi.application.data_api.write_support import (
-    _build_write_models,
-)
-from contractapi.application.data_api.writes import _add_bulk, _add_create
+from contractapi.application.data_api.mount import _mount_endpoint
 from contractapi.application.jobs import get_job
 from contractapi.core.errors import (
     AppError,
@@ -42,11 +37,9 @@ from contractapi.core.errors import (
 from contractapi.domain.models.spec import (
     ApiSpec,
     AuthMode,
-    EndpointSpec,
-    HttpMethod,
 )
 from contractapi.infrastructure.db.engine import create_engine_for_config
-from contractapi.infrastructure.db.introspect import resolve_schema
+from contractapi.infrastructure.db.errors import db_error
 from contractapi.infrastructure.idempotency import (
     idempotency_store,
 )
@@ -78,6 +71,13 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
     app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
+
+    async def database_error_handler(request: Request, exc: Exception) -> Any:
+        # Any DB failure that reached here (schema changed, lost connection, …) → Problem Details.
+        return await app_error_handler(request, db_error(exc))  # type: ignore[arg-type]
+
+    app.add_exception_handler(SQLAlchemyError, database_error_handler)
+    app.add_middleware(OutputFormatMiddleware, fmt=output_format_for(spec))
 
     public_paths = {
         "/health",
@@ -265,48 +265,3 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
         logger.warning("GraphQL facade not mounted: %s", exc)
 
     return app
-
-
-def _mount_endpoint(
-    router: APIRouter,
-    engine: Engine,
-    metadata: MetaData,
-    endpoint: EndpointSpec,
-    spec: ApiSpec,
-) -> None:
-    if endpoint.is_sql:
-        from contractapi.application.sql_endpoint import mount_sql_endpoint
-
-        mount_sql_endpoint(router, engine, endpoint, spec)
-        return
-
-    table = Table(
-        endpoint.table,
-        metadata,
-        schema=resolve_schema(engine, endpoint.schema_name),
-        autoload_with=engine,
-    )
-    missing = [f for f in endpoint.fields if f not in table.c]
-    if missing:
-        raise ValueError(
-            f"Endpoint '{endpoint.name}': missing columns on "
-            f"{endpoint.schema_name}.{endpoint.table}: {', '.join(missing)}"
-        )
-
-    tags = [endpoint.name]
-    if HttpMethod.GET in endpoint.methods:
-        _add_list(router, engine, metadata, table, endpoint, spec, tags)
-        _add_detail(router, engine, metadata, table, endpoint, spec, tags)
-
-    if spec.app.read_only:
-        return
-
-    item_model, _, write_model = _build_write_models(endpoint, table)
-    if HttpMethod.POST in endpoint.methods:
-        _add_create(router, engine, table, endpoint, spec, item_model, write_model, tags)
-        if endpoint.bulk_enabled:
-            _add_bulk(router, engine, table, endpoint, spec, write_model, tags)
-    if HttpMethod.PUT in endpoint.methods or HttpMethod.PATCH in endpoint.methods:
-        _add_update(router, engine, table, endpoint, spec, item_model, write_model, tags)
-    if HttpMethod.DELETE in endpoint.methods:
-        _add_delete(router, engine, table, endpoint, spec, tags)

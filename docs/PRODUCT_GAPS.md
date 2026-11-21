@@ -24,27 +24,29 @@ No features currently require `CONTRACTAPI_EXPERIMENTAL`. The env var remains fo
 
 ## Nice-to-have later (not blocking Beta)
 
-- Deeper warehouse dialect quirks (Snowflake VARIANT, BQ STRUCT nesting)
+- Filtering inside nested warehouse data (Snowflake VARIANT paths, BigQuery STRUCT fields)
 - GraphQL subscription push (CDC) beyond poll MVP
 - dbt exposures / tests → OpenAPI metadata
 
-## Business-logic limits (found in the 2026-11-20 user walkthrough)
+## Business rules: what the API does and where the limits are
 
-What a data team should know before relying on the generated API for real business rules:
+Each rule is a spec option and a Studio control; defaults keep the simple behaviour.
 
-- **Writes touch one table at a time.** No multi-table transactions, no custom code hooks;
-  complex rules belong in the database (views, constraints, triggers).
-- **Bulk create is per row**, not all-or-nothing: valid rows are stored, the rest are reported
-  (HTTP 207).
-- **`updated_at` is not set by the API.** If `etag_field` is a timestamp, the database must
-  update it (trigger / `ON UPDATE`), or `If-Match` cannot detect concurrent edits. Without
-  `etag_field`, the ETag is a hash of the row and works everywhere.
-- **Decimals are JSON numbers.** Values beyond ~15 significant digits lose precision; a
-  "decimals as text" option would fix this for finance data.
-- **Soft-deleted rows still hold unique values** (a deleted email cannot be reused).
-- **Schema changes are not tracked live**: a renamed or dropped column is caught when the API
-  is activated or restarted ("missing columns"), not while it runs.
-- **MySQL `DATETIME` has no time zone**, so those values are returned without an offset.
+| Need | Option | Limit |
+|------|--------|-------|
+| Save a row with its children atomically | `nested_writes` (one_to_many relations) | One level deep, create only (POST), max 100 children per relation, REST only (not GraphQL / bulk / async writes). Children get no timestamps or defaults of their own |
+| Bulk create all-or-nothing | `bulk_atomic: true` | Max 100 rows; `reuse_deleted` does not apply inside an atomic bulk |
+| API sets created/updated times | `timestamps` | Rows changed outside the API keep whatever the database sets |
+| Defaults / values callers cannot change | `defaults`, `fixed_values` | Constant values only (no expressions or lookups) |
+| Bring back / reuse deleted rows | `soft_delete.restore`, `soft_delete.reuse_deleted` | Reuse matches the table's unique constraints/indexes. It revives the same record: its id, omitted columns and children (e.g. orders) come back with it |
+| Exact money values | `app.decimals: string` | Applies to the whole API, not per field |
+| Date-times with a zone | `database.timezone` | One zone per database; async-job results use the stored value as is |
+| Notice renamed/dropped columns | 409 `schema-changed` + Studio **Check database changes** | Checked on request or on demand, not pushed to you |
+| Snowflake/BigQuery nested data | automatic | Returned as JSON only: no filter, sort or write on those columns; GraphQL returns VARIANT as text |
+
+Not offered on purpose: **custom code hooks** (running user Python on the server). Rules that need
+logic beyond the above belong in the database: views, constraints, triggers, or a custom SQL
+endpoint for reads. Writes still target one table plus its nested children.
 
 ## Not in scope
 

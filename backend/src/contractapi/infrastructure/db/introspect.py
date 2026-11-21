@@ -5,11 +5,11 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass, field
 
-from sqlalchemy import MetaData, Table, inspect
+from sqlalchemy import MetaData, Table, inspect, text
 from sqlalchemy.engine import Engine
 
 from contractapi.domain.sensitive import find_sensitive_columns
-from contractapi.infrastructure.db.dialects import dialect_of, table_schema
+from contractapi.infrastructure.db.dialects import MSSQL, dialect_of, table_schema
 from contractapi.infrastructure.db.engine import create_engine_for_url
 
 # MySQL / SQL Server append storage details ("VARCHAR(200) COLLATE ..."), noise in Studio.
@@ -61,14 +61,25 @@ def resolve_schema(engine: Engine, schema: str | None) -> str | None:
     return table_schema(dialect_of(engine), schema, database=engine.url.database)
 
 
+def _system_objects(engine: Engine) -> set[str]:
+    """Tables/views the database ships itself (SQL Server spt_*, MSreplication_*): never offered."""
+    if dialect_of(engine) != MSSQL:
+        return set()
+    with engine.connect() as conn:
+        return set(conn.execute(text("SELECT name FROM sys.objects WHERE is_ms_shipped = 1")).scalars())
+
+
 def introspect_with_engine(engine: Engine, schema: str = "public") -> list[TableInfo]:
     inspector = inspect(engine)
     schema = resolve_schema(engine, schema)  # type: ignore[assignment]
+    hidden = _system_objects(engine)
     tables: list[TableInfo] = []
     for table_name in inspector.get_table_names(schema=schema):
-        tables.append(_build_table_info(inspector, table_name, schema, kind="table"))
+        if table_name not in hidden:
+            tables.append(_build_table_info(inspector, table_name, schema, kind="table"))
     for view_name in inspector.get_view_names(schema=schema):
-        tables.append(_build_table_info(inspector, view_name, schema, kind="view"))
+        if view_name not in hidden:
+            tables.append(_build_table_info(inspector, view_name, schema, kind="view"))
     return tables
 
 

@@ -49,7 +49,7 @@ export function AccessSection({ s }: { s: EditorState }) {
             onChange={(e) =>
               updateEndpoint({
                 soft_delete: e.target.value
-                  ? { column: e.target.value }
+                  ? { ...endpoint.soft_delete, column: e.target.value }
                   : null,
               })
             }

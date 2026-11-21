@@ -271,9 +271,9 @@ export function Method({ method }: { method: string }) {
   return <span className={cx(ui.method, ui[`method-${method}`])}>{method}</span>;
 }
 
-export function Hint({ children, ...rest }: HTMLAttributes<HTMLSpanElement>) {
+export function Hint({ children, className, ...rest }: HTMLAttributes<HTMLSpanElement>) {
   return (
-    <span className={ui.hint} {...rest}>
+    <span className={cx(ui.hint, className)} {...rest}>
       {children}
     </span>
   );

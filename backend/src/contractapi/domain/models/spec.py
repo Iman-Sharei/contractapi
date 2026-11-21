@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
@@ -83,6 +83,25 @@ class DatabaseConfig(BaseModel):
     # postgres | mysql | sqlserver | duckdb | snowflake | bigquery (all but postgres need an extra).
     # Inferred from the URL scheme when omitted.
     driver: DatabaseDriver = DatabaseDriver.POSTGRES
+    # Time zone of date-times stored without one (MySQL DATETIME, SQL Server datetime2,
+    # Postgres timestamp). Set it (e.g. "UTC") and responses carry the offset.
+    timezone: str | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def known_timezone(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value.strip())
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(
+                f"'{value}' is not a known time zone. Use a name like "
+                "'UTC', 'Europe/Berlin' or 'Asia/Tehran'."
+            ) from exc
+        return value.strip()
 
     @model_validator(mode="before")
     @classmethod
@@ -120,6 +139,8 @@ class AppConfig(BaseModel):
     legacy_api_prefix: str | None = None
     deprecation: DeprecationConfig = Field(default_factory=DeprecationConfig)
     audit_enabled: bool = True
+    # "string" returns decimal columns as exact text ("12.50"); "number" as JSON numbers.
+    decimals: Literal["number", "string"] = "number"
     compression: bool = True
     tracing: bool = True
     # Comma-separated CIDRs/IPs; empty = allow all

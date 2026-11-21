@@ -1,5 +1,18 @@
 # Upgrading
 
+## 0.6.1 → next
+
+No YAML changes are required: every new option is off by default. Behaviour changes to check:
+
+1. **Missing required value → 422** (was 409 on Postgres/SQL Server, 500 on MySQL). Clients that
+   treated 409 as "duplicate" now get 409 only for duplicates and missing referenced rows.
+2. **Schema changes → 409 `schema-changed`** (was 500) when a column/table the API uses is gone.
+3. **Snowflake / BigQuery:** a `VARIANT`/`OBJECT`/`ARRAY`/`STRUCT`/`RECORD` column listed in
+   `filters`, `sortable` or `writable_fields` now stops activation with a message (it failed per
+   request before). Remove it from those lists. Such columns are now returned as JSON, not text.
+4. **`fixed_values` / `timestamps` columns** are removed from what clients may send: a client
+   value for them is a 422.
+
 ## 0.6.0 → 0.6.1
 
 1. **Sign in once more:** Studio session cookies changed format (signed token instead of the key).

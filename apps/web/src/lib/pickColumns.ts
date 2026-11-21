@@ -1,3 +1,4 @@
+import { tableKey } from "./tableKey";
 import type { TableInfo } from "./types";
 
 /** Non-sensitive column names, ensuring primary key is included first when present. */
@@ -22,4 +23,26 @@ export function formatApiPath(prefix: string, path: string): string {
   const p = (prefix || "").replace(/\/+$/, "");
   const rest = path.startsWith("/") ? path : `/${path}`;
   return `${p}${rest}` || rest;
+}
+
+/** True when a picked column stores exact decimals (NUMERIC / DECIMAL / MONEY), e.g. prices. */
+export function hasDecimalColumns(
+  tables: TableInfo[],
+  pickedKeys: string[],
+  pickedColumns: Record<string, string[]>,
+): boolean {
+  return pickedKeys.some((key) => {
+    const table = tables.find((t) => tableKey(t) === key);
+    const picked = new Set(pickedColumns[key] ?? []);
+    return (table?.columns ?? []).some((c) => picked.has(c.name) && /^(NUMERIC|DECIMAL|MONEY|NUMBER)\b/i.test(c.type));
+  });
+}
+
+/** Tables ticked right after connecting: all of a small database, none of a big one, where
+ *  publishing everything by accident would expose far more than intended. */
+export const AUTO_PICK_MAX_TABLES = 5;
+
+export function initialPicks(tables: TableInfo[]): Record<string, string[]> {
+  if (tables.length > AUTO_PICK_MAX_TABLES) return {};
+  return Object.fromEntries(tables.map((t) => [tableKey(t), defaultSafeColumns(t)]));
 }

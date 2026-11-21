@@ -7,6 +7,7 @@ import { SafetyChecklist } from "../SafetyChecklist";
 import { UseYourApi } from "../UseYourApi";
 import type { EditorState } from "../editor/useEditorState";
 import styles from "../pages.module.css";
+import { DatabaseChangesCard } from "./DatabaseChangesCard";
 
 export function OverviewTab({
   s,
@@ -67,6 +68,7 @@ export function OverviewTab({
             </ul>
           </CardBody>
         </Card>
+        <DatabaseChangesCard name={name} />
         <Card pad>
           <SafetyChecklist spec={spec} title="Before you share it" />
         </Card>

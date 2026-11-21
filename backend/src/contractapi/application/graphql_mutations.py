@@ -8,7 +8,13 @@ from sqlalchemy import Table, and_
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from contractapi.application.data_api.write_support import CONFLICT_DETAIL, IN_USE_DETAIL
+from contractapi.application.data_api.write_rules import (
+    db_timezone,
+    for_create,
+    for_update,
+    now_for,
+)
+from contractapi.application.data_api.write_support import IN_USE_DETAIL, conflict_error
 from contractapi.application.graphql_ops import (
     _apply_rbac,
     _claim_value,
@@ -21,6 +27,7 @@ from contractapi.application.validation_rules import validate_payload
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import ApiSpec, EndpointSpec, HttpMethod
 from contractapi.infrastructure.db.dialects import insert_returning, update_returning
+from contractapi.infrastructure.db.errors import db_error
 from contractapi.infrastructure.security.auth import enforce_endpoint_roles
 
 
@@ -32,12 +39,13 @@ def _writable_keys(ep: EndpointSpec) -> set[str]:
 
 def _filter_write_payload(ep: EndpointSpec, data: dict[str, Any]) -> dict[str, Any]:
     allowed = _writable_keys(ep)
-    out = {k: v for k, v in data.items() if k in allowed}
-    if not out and data:
+    refused = sorted(set(data) - allowed)
+    if refused:  # same as REST (422): never silently drop what the caller sent
         raise ValueError(
-            f"No writable fields in payload for '{ep.name}'. Allowed: {sorted(allowed)}"
+            f"These fields cannot be written on '{ep.name}': {', '.join(refused)}. "
+            f"Allowed: {', '.join(sorted(allowed))}"
         )
-    return out
+    return dict(data)
 
 
 def _write_target(
@@ -124,6 +132,7 @@ def _mutate_create(info: Any, name: str, data: dict[str, Any]) -> dict[str, Any]
     payload = _force_row_level(ep, principal, _filter_write_payload(ep, data), always=True)
     validate_payload(ep, payload)
     table = _load_table(engine, ep)
+    payload = for_create(ep, table, payload, db_timezone(spec))  # same write rules as REST
     result: dict[str, Any] | None = None
     try:
         with engine.begin() as conn:
@@ -131,9 +140,9 @@ def _mutate_create(info: Any, name: str, data: dict[str, Any]) -> dict[str, Any]
             row = insert_returning(conn, table, payload, fields, ep.primary_key)
             result = {k: _jsonable(v) for k, v in dict(row or payload).items()}
     except IntegrityError as exc:
-        raise ValueError(CONFLICT_DETAIL) from exc
+        raise ValueError(conflict_error(exc).detail) from exc
     except SQLAlchemyError as exc:
-        raise ValueError(f"Database error: {exc.__class__.__name__}") from exc
+        raise ValueError(db_error(exc).detail) from exc
     _after_write(spec, ep, principal, "create", result, result.get(ep.primary_key))
     return _visible(spec, ep, principal, result)
 
@@ -151,6 +160,7 @@ def _mutate_update(info: Any, name: str, item_id: Any, data: dict[str, Any]) -> 
     if pk not in table.c:
         raise ValueError(f"Primary key '{pk}' missing on table.")
     where = and_(table.c[pk] == item_id, *_row_filters(ep, table, principal))
+    payload = for_update(ep, table, payload, db_timezone(spec))
     result: dict[str, Any] | None = None
     try:
         with engine.begin() as conn:
@@ -160,9 +170,9 @@ def _mutate_update(info: Any, name: str, item_id: Any, data: dict[str, Any]) -> 
                 raise ValueError(f"{name} with {pk}={item_id} not found")
             result = {k: _jsonable(v) for k, v in dict(row).items()}
     except IntegrityError as exc:
-        raise ValueError(CONFLICT_DETAIL) from exc
+        raise ValueError(conflict_error(exc).detail) from exc
     except SQLAlchemyError as exc:
-        raise ValueError(f"Database error: {exc.__class__.__name__}") from exc
+        raise ValueError(db_error(exc).detail) from exc
     _after_write(spec, ep, principal, "update", result, item_id)
     return _visible(spec, ep, principal, result)
 
@@ -177,17 +187,16 @@ def _mutate_delete(info: Any, name: str, item_id: Any) -> dict[str, Any]:
     try:
         with engine.begin() as conn:
             if ep.soft_delete and ep.soft_delete.column in table.c:
-                from datetime import datetime, timezone
-
+                col = ep.soft_delete.column
                 result = conn.execute(
-                    table.update()
-                    .where(where)
-                    .values({ep.soft_delete.column: datetime.now(timezone.utc)})
+                    table.update().where(where).values({col: now_for(table, col, db_timezone(spec))})
                 )
             else:
                 result = conn.execute(table.delete().where(where))
     except IntegrityError as exc:
         raise ValueError(IN_USE_DETAIL) from exc
+    except SQLAlchemyError as exc:
+        raise ValueError(db_error(exc).detail) from exc
     if result.rowcount == 0:
         raise ValueError(f"{name} with {pk}={item_id} not found")
     _after_write(spec, ep, principal, "delete", {"id": _jsonable(item_id)}, item_id)

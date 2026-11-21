@@ -99,7 +99,7 @@ export function useEditorCore({
   const selected = tables.find((t) => tableKey(t) === selectedTable) ?? null;
   const endpoint = spec.endpoints.find((e) => e.name === activeEndpoint) ?? null;
   const draftSpec = useMemo(
-    () => ({ ...spec, database: { url: dbUrl, driver: dbDriver } }),
+    () => ({ ...spec, database: { ...spec.database, url: dbUrl, driver: dbDriver } }),
     [spec, dbUrl, dbDriver],
   );
   const localYaml = useMemo(() => buildYaml(draftSpec), [draftSpec]);

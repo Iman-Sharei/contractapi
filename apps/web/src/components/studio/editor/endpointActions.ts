@@ -24,7 +24,7 @@ export function endpointActions(c: EditorCore) {
   function onIntrospect() {
     setStatus(null);
     if (isWarehouseDriver(dbDriver)) {
-      setSpec((prev) => ({ ...prev, database: { url: dbUrl, driver: dbDriver } }));
+      setSpec((prev) => ({ ...prev, database: { ...prev.database, url: dbUrl, driver: dbDriver } }));
       setStatus(
         `${dbDriver}: table introspect is Postgres-only. Add a SQL/aggregate endpoint or activate with known fields.`,
       );
@@ -35,7 +35,7 @@ export function endpointActions(c: EditorCore) {
         const result = await introspectDatabase(dbUrl, schema);
         setTables(result.tables);
         if (result.tables[0]) setSelectedTable(tableKey(result.tables[0]));
-        setSpec((prev) => ({ ...prev, database: { url: dbUrl, driver: "postgres" } }));
+        setSpec((prev) => ({ ...prev, database: { ...prev.database, url: dbUrl, driver: dbDriver } }));
         setStatus(`Loaded ${result.count} tables/views from schema '${schema}'.`);
       } catch (e) {
         setStatus(null, e instanceof Error ? e.message : "Introspection failed");
@@ -68,7 +68,7 @@ export function endpointActions(c: EditorCore) {
     setSchema(next === "duckdb" ? "main" : server ? defaultSchema(next, db) : "public");
     setSpec((prev) => ({
       ...prev,
-      database: { url: nextUrl, driver: next },
+      database: { ...prev.database, url: nextUrl, driver: next },
       app: {
         ...prev.app,
         read_only: isWarehouseDriver(next) ? true : prev.app.read_only,
