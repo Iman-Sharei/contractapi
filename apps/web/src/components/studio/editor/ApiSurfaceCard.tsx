@@ -36,8 +36,13 @@ export function ApiSurfaceCard({ s }: { s: EditorState }) {
           <div className={styles.switchGrid}>
             <Switch
               label="Read-only"
-              description="Blocks every create, update and delete."
+              description={
+                spec.app.auth === "none"
+                  ? "Public APIs are always read-only. Choose an API key or login tokens to allow changes."
+                  : "Blocks every create, update and delete."
+              }
               checked={spec.app.read_only}
+              disabled={spec.app.auth === "none" && spec.app.read_only}
               onChange={(e) => patchApp({ read_only: e.target.checked })}
             />
             <Switch

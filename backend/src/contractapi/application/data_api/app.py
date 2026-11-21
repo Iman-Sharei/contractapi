@@ -26,6 +26,7 @@ from contractapi.application.data_api.http_meta import (
     _record_metrics,
 )
 from contractapi.application.data_api.mount import _mount_endpoint
+from contractapi.application.data_api.openapi_docs import install_openapi
 from contractapi.application.jobs import get_job
 from contractapi.core.errors import (
     AppError,
@@ -56,7 +57,7 @@ from contractapi.infrastructure.security.jwt_tokens import (
 from contractapi.infrastructure.security.rate_limit import limiter
 
 
-def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
+def create_data_app(spec: ApiSpec, *, engine: Engine | None = None, name: str | None = None) -> FastAPI:
     engine = engine or create_engine_for_config(spec.database)
     metadata = MetaData()
     prefix = spec.app.api_prefix
@@ -68,6 +69,8 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
     )
     app.state.engine = engine
     app.state.spec = spec
+    app.state.api_name = name  # which saved API this is (audit, key scope); None in previews
+    install_openapi(app, spec)
     app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
@@ -253,7 +256,7 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None) -> FastAPI:
     for pfx in prefixes:
         router = APIRouter(prefix=pfx)
         for endpoint in spec.endpoints:
-            _mount_endpoint(router, engine, metadata, endpoint, spec)
+            _mount_endpoint(router, engine, metadata, endpoint, spec, app=app)
         app.include_router(router)
 
     try:

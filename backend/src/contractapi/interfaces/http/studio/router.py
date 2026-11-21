@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
-from fastapi.openapi.utils import get_openapi
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from contractapi.application.data_api_builder import create_data_app
+from contractapi.application.client_exports import export_openapi
+from contractapi.application.studio_actions import activate_api, deactivate_api
 from contractapi.application.studio_service import (
-    activate_spec,
     introspect,
     spec_store,
     validate_spec_payload,
@@ -19,7 +18,7 @@ from contractapi.application.studio_service import (
 from contractapi.core.errors import AppError
 from contractapi.domain.models.spec import parse_spec
 from contractapi.infrastructure.db.errors import safe_db_message
-from contractapi.infrastructure.security.auth import require_studio_api_key
+from contractapi.infrastructure.security.auth import require_studio_api_key, studio_actor
 from contractapi.interfaces.http.studio.presenters import (
     _spec_json,
     _spec_yaml,
@@ -74,9 +73,9 @@ def studio_validate(body: ValidateSpecRequest) -> ValidateSpecResponse:
 
 
 @router.post("/activate", response_model=ServeInfoResponse)
-def studio_activate(body: ValidateSpecRequest) -> ServeInfoResponse:
+def studio_activate(body: ValidateSpecRequest, request: Request) -> ServeInfoResponse:
     key = body.name or "_default"
-    activate_spec(body.spec, name=key, primary=True)
+    activate_api(body.spec, name=key, primary=True, actor=studio_actor(request))
     return ServeInfoResponse(
         message=(
             f"Data API '{key}' activated under /data (primary) and /apis/{key}. "
@@ -89,9 +88,11 @@ def studio_activate(body: ValidateSpecRequest) -> ServeInfoResponse:
 
 
 @router.post("/activate/{name}", response_model=ServeInfoResponse)
-def studio_activate_named(name: str, body: ValidateSpecRequest, primary: bool = False) -> ServeInfoResponse:
+def studio_activate_named(
+    name: str, body: ValidateSpecRequest, request: Request, primary: bool = False
+) -> ServeInfoResponse:
     """Activate an additional named API without replacing /data unless primary=true."""
-    activate_spec(body.spec, name=name, primary=primary)
+    activate_api(body.spec, name=name, primary=primary, actor=studio_actor(request))
     return ServeInfoResponse(
         message=f"Data API '{name}' activated under /apis/{name}"
         + (" and set as /data primary." if primary else "."),
@@ -146,15 +147,14 @@ def studio_active_list() -> dict[str, Any]:
 
 
 @router.post("/deactivate")
-def studio_deactivate(name: str | None = None) -> dict[str, Any]:
+def studio_deactivate(request: Request, name: str | None = None) -> dict[str, Any]:
+    deactivate_api(name, actor=studio_actor(request))
     if name:
-        spec_store.remove(name)
         return {
             "active": spec_store.active is not None,
             "message": f"API '{name}' deactivated.",
             "apis": sorted(spec_store.all()),
         }
-    spec_store.clear()
     return {"active": False, "message": "All data APIs deactivated.", "apis": []}
 
 
@@ -164,14 +164,8 @@ def studio_preview_openapi(body: OpenApiPreviewRequest) -> dict[str, Any]:
     if not result["valid"]:
         return {"valid": False, "errors": result["errors"], "openapi": None}
     try:
-        spec = parse_spec(body.spec)
-        app = create_data_app(spec)
-        openapi = get_openapi(
-            title=app.title,
-            version=app.version,
-            description=app.description,
-            routes=app.routes,
-        )
+        # Same complete document as the exports, so drafts and saved versions compare 1:1.
+        openapi = export_openapi(parse_spec(body.spec))
         return {"valid": True, "errors": [], "openapi": openapi}
     except (SQLAlchemyError, AppError, ValueError, RuntimeError) as exc:
         # Building the app reflects the DB; when it is unreachable the preview waits.

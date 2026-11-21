@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
   getApiBase,
@@ -8,14 +9,21 @@ import {
   gitStatus,
   gitTree,
   importDbt,
+  saveSpec,
   oidcMe,
 } from "@/lib/api";
 import { CodeBlock } from "@/components/ui/CodeBlock";
 import { Icon } from "@/components/ui/Icon";
-import { Banner, Button, ButtonLink, Card, CardBody, CardHeader, PageHeader, ui } from "@/components/ui/primitives";
+import { Banner, Button, ButtonLink, Card, CardBody, CardHeader, Hint, PageHeader, ui } from "@/components/ui/primitives";
+import { emptySpec, slugify } from "@/components/studio/editor/useEditorState";
+import type { EndpointDraft } from "@/lib/types";
 import styles from "@/components/studio/pages.module.css";
 
+/** A dbt import has no connection yet: the user picks the real one in Settings next. */
+const DBT_PLACEHOLDER_URL = "postgresql://USER@HOST:5432/DATABASE";
+
 export default function ToolsPage() {
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -30,11 +38,11 @@ export default function ToolsPage() {
   const [entries, setEntries] = useState<{ name: string; path: string; kind: string }[]>([]);
   const [filePreview, setFilePreview] = useState<string | null>(null);
 
-  const [dbtJson, setDbtJson] = useState(
-    '{\n  "models": [\n    {\n      "name": "orders",\n      "description": "Orders mart",\n      "columns": [{ "name": "id" }, { "name": "status" }]\n    }\n  ]\n}\n',
+  const [dbtText, setDbtText] = useState(
+    "version: 2\nmodels:\n  - name: fct_orders\n    description: Orders mart\n    columns:\n      - name: order_id\n        tests: [unique, not_null]\n      - name: status\n",
   );
-  const [dbtResult, setDbtResult] = useState<string | null>(null);
-
+  const [dbtModels, setDbtModels] = useState<EndpointDraft[] | null>(null);
+  const [dbtApiName, setDbtApiName] = useState("dbt_models");
   const [oidc, setOidc] = useState<{
     authenticated: boolean;
     browser_login?: boolean;
@@ -87,12 +95,29 @@ export default function ToolsPage() {
   function runDbtImport() {
     startTransition(async () => {
       try {
-        const payload = JSON.parse(dbtJson) as Record<string, unknown>;
-        const res = await importDbt(payload);
-        setDbtResult(JSON.stringify(res, null, 2));
-        setOk(`Imported ${res.count} endpoint(s) from ${res.source}`);
+        const res = await importDbt(dbtText);
+        setDbtModels(res.endpoints);
+        setOk(`Found ${res.count} model${res.count === 1 ? "" : "s"} in the ${res.source === "manifest" ? "manifest" : "schema.yml"}.`);
       } catch (e) {
+        setDbtModels(null);
         setErr(e instanceof Error ? e.message : "dbt import failed");
+      }
+    });
+  }
+
+  /** Save the models as a new, read-only API; its database is set next, in Settings. */
+  function saveDbtApi() {
+    const name = slugify(dbtApiName);
+    startTransition(async () => {
+      try {
+        const draft = emptySpec(DBT_PLACEHOLDER_URL);
+        draft.app.title = `${name} (from dbt)`;
+        draft.app.description = "Endpoints imported from dbt models";
+        draft.endpoints = dbtModels ?? [];
+        await saveSpec(name, draft);
+        router.push(`/studio/${encodeURIComponent(name)}?tab=settings`);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "Could not save the API");
       }
     });
   }
@@ -226,7 +251,11 @@ export default function ToolsPage() {
                     </button>
                   </li>
                 ))}
-                {entries.length === 0 && <li className={styles.railEmpty}>Empty.</li>}
+                {entries.length === 0 && (
+                  <li className={styles.railEmpty}>
+                    {path ? "This folder is empty." : "Nothing to show: the server does not run from a Git checkout."}
+                  </li>
+                )}
               </ul>
             </div>
             {filePreview != null && <CodeBlock code={filePreview.slice(0, 8000)} title="File preview" />}
@@ -237,25 +266,54 @@ export default function ToolsPage() {
           <CardHeader
             icon="table"
             title="dbt → endpoints"
-            description="Paste a schema.yml (as JSON) or a manifest.json; each model becomes an endpoint draft."
+            description="Paste a schema.yml or manifest.json; each model becomes a read-only endpoint."
           />
           <CardBody className={ui.stack}>
             <label>
-              JSON
+              schema.yml or manifest.json
               <textarea
                 rows={12}
-                value={dbtJson}
-                onChange={(e) => setDbtJson(e.target.value)}
+                value={dbtText}
+                onChange={(e) => setDbtText(e.target.value)}
                 spellCheck={false}
                 className={styles.monoArea}
+                data-testid="dbt-text"
               />
             </label>
             <div>
-              <Button variant="primary" icon="arrowRight" onClick={runDbtImport} disabled={pending}>
-                Import
+              <Button variant="primary" icon="arrowRight" onClick={runDbtImport} disabled={pending} data-testid="dbt-import">
+                Read models
               </Button>
             </div>
-            {dbtResult && <CodeBlock code={dbtResult} title="Result" />}
+            {dbtModels && (
+              <div className={ui.stack} data-testid="dbt-models">
+                <ul className={styles.endpointList}>
+                  {dbtModels.map((m) => (
+                    <li key={m.name}>
+                      <code>{m.path}</code>
+                      <span className={styles.endpointMeta}>
+                        {m.fields.length} fields · id: {m.primary_key}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {dbtModels.length > 0 && (
+                  <div className={styles.inlineForm}>
+                    <label>
+                      Name of the new API
+                      <input value={dbtApiName} onChange={(e) => setDbtApiName(e.target.value)} spellCheck={false} />
+                    </label>
+                    <Button variant="primary" icon="plus" onClick={saveDbtApi} disabled={pending} data-testid="dbt-save">
+                      Save as a new API
+                    </Button>
+                  </div>
+                )}
+                <Hint>
+                  The new API is read-only and not live yet. Next, choose its database in Settings and
+                  check the columns, then make it live.
+                </Hint>
+              </div>
+            )}
           </CardBody>
         </Card>
       </div>

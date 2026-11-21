@@ -12,6 +12,14 @@ No YAML changes are required: every new option is off by default. Behaviour chan
    request before). Remove it from those lists. Such columns are now returned as JSON, not text.
 4. **`fixed_values` / `timestamps` columns** are removed from what clients may send: a client
    value for them is a 422.
+5. **Public APIs are read-only.** A spec with `auth: none` and write methods no longer loads: choose
+   `api_key` / `jwt`, or remove the write methods.
+6. **Ids that are not unique.** A table endpoint whose `primary_key` is not the table's primary key
+   or a unique column no longer starts with PATCH / PUT / DELETE, or with cursor paging (use
+   `pagination.mode: offset`). Views with cursor paging still start, with a warning in the log.
+7. **`ENVIRONMENT=production`** refuses `DATA_API_KEYS` with `dev-data-key` or keys under 16 chars.
+8. Set **`PUBLIC_API_BASE`** on the API (same value as the web's `NEXT_PUBLIC_API_BASE`) so the
+   exported OpenAPI / Postman / Python client point at the right address.
 
 ## 0.6.0 → 0.6.1
 

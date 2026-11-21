@@ -122,6 +122,8 @@ def mount_sql_endpoint(
                     detail="Only configured sortable fields are accepted.",
                 )
             order_sql = f" ORDER BY q.{_quote_ident(col)} {'DESC' if descending else 'ASC'}"
+            if col != endpoint.primary_key:  # tie-breaker: equal values must not repeat/skip
+                order_sql += f", q.{_quote_ident(endpoint.primary_key)} ASC"
 
         if mode == PaginationMode.CURSOR and cursor:
             try:

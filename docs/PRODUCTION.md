@@ -11,7 +11,12 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 Services: Postgres `:5433`, Redis, API `:8000`, Studio `:3000`.
 
 - Studio → API via internal network; browser hits Studio only.
-- Set strong `STUDIO_API_KEY`, `DATA_API_KEYS`, `JWT_SECRET`.
+- Set strong `STUDIO_API_KEY`, `DATA_API_KEYS` (or leave it empty and create keys in Studio),
+  `JWT_SECRET`. With `ENVIRONMENT=production` the API refuses to start with default or short
+  values, including the demo data key `dev-data-key`.
+- Set `NEXT_PUBLIC_API_BASE` (web) and `PUBLIC_API_BASE` (API) to the address callers use, e.g.
+  `https://api.example.com`. Studio shows it in code samples, and the exported OpenAPI, Postman
+  collection and Python client point there, so they work for other teams as downloaded.
 
 ## Reverse proxy (TLS)
 

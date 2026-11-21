@@ -1,12 +1,11 @@
 "use client";
 
 import { Card, CardBody, CardHeader, EmptyState } from "@/components/ui/primitives";
+import { eventTime, eventWhat, eventWhere, eventWho, type AuditEvent } from "@/lib/activity";
 import styles from "../pages.module.css";
 
-const SKIP = ["ts", "timestamp", "action", "event", "type"];
-
 /** Recent audit events (newest first). Meta never holds secrets — the server strips them. */
-export function ActivityCard({ events }: { events: Record<string, unknown>[] }) {
+export function ActivityCard({ events }: { events: AuditEvent[] }) {
   if (events.length === 0) {
     return (
       <EmptyState icon="book" title="No activity yet">
@@ -16,38 +15,29 @@ export function ActivityCard({ events }: { events: Record<string, unknown>[] }) 
   }
   return (
     <Card>
-      <CardHeader icon="book" title="Recent activity" description="The latest changes and sign-ins on this server." />
+      <CardHeader icon="book" title="Recent activity" description="Who changed what, newest first." />
       <CardBody className={styles.tableWrap}>
         <table>
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Action</th>
-              <th>Details</th>
+              <th>When</th>
+              <th>Who</th>
+              <th>What</th>
+              <th>Where</th>
             </tr>
           </thead>
           <tbody>
             {events
               .slice()
               .reverse()
-              .map((e, i) => {
-                const ts =
-                  typeof e.ts === "number"
-                    ? new Date(e.ts * 1000).toLocaleString()
-                    : typeof e.timestamp === "string"
-                      ? e.timestamp
-                      : "—";
-                const meta = JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => !SKIP.includes(k))));
-                return (
-                  <tr key={i}>
-                    <td className={styles.nowrap}>{ts}</td>
-                    <td>
-                      <code>{String(e.action ?? e.event ?? e.type ?? "—")}</code>
-                    </td>
-                    <td className={styles.metaCell}>{meta.slice(0, 180)}</td>
-                  </tr>
-                );
-              })}
+              .map((e, i) => (
+                <tr key={i}>
+                  <td className={styles.nowrap}>{eventTime(e)}</td>
+                  <td>{eventWho(e)}</td>
+                  <td>{eventWhat(e)}</td>
+                  <td className={styles.metaCell}>{eventWhere(e)}</td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </CardBody>

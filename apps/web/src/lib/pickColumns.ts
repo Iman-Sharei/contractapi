@@ -46,3 +46,13 @@ export function initialPicks(tables: TableInfo[]): Record<string, string[]> {
   if (tables.length > AUTO_PICK_MAX_TABLES) return {};
   return Object.fromEntries(tables.map((t) => [tableKey(t), defaultSafeColumns(t)]));
 }
+
+/** Id column, paging and allowed methods for a new endpoint. Without a single-column unique
+ *  id (views, tables without a primary key) next-page links could skip rows and "change row 5"
+ *  could change many rows, so such sources get page numbers and create-only writes. */
+export function endpointDefaults(table: TableInfo, allowWrites: boolean, writeMethods: readonly string[]) {
+  const uniqueId = table.primary_keys.length === 1;
+  const pk = table.primary_keys[0] ?? table.columns.find((c) => !c.sensitive)?.name ?? "id";
+  const methods = !allowWrites ? ["GET"] : uniqueId ? ["GET", ...writeMethods] : ["GET", "POST"];
+  return { pk, uniqueId, mode: (uniqueId ? "cursor" : "offset") as "cursor" | "offset", methods };
+}

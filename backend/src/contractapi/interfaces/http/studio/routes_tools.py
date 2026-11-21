@@ -14,16 +14,18 @@ router = APIRouter()
 
 @router.post("/import/dbt")
 def studio_import_dbt(body: dict[str, Any]) -> dict[str, Any]:
-    """Convert dbt schema.yml or manifest.json JSON into endpoint drafts."""
-    from contractapi.application.dbt_import import import_dbt_payload
+    """Convert a dbt schema.yml (YAML or JSON text) or manifest.json into endpoint drafts."""
+    from contractapi.application.dbt_import import import_dbt_payload, import_dbt_text
 
+    if isinstance(body.get("text"), str):
+        return import_dbt_text(body["text"])
     payload = body.get("manifest") if "manifest" in body else body.get("schema") or body
     if payload is None:
         raise AppError(
-            type_="https://contractapi.dev/problems/validation",
-            title="Validation Error",
+            type_="https://contractapi.dev/problems/validation-error",
+            title="Validation failed",
             status=422,
-            detail="Provide dbt schema.yml JSON or manifest.json under 'schema' / 'manifest'.",
+            detail="Paste the contents of a dbt schema.yml or manifest.json.",
         )
     return import_dbt_payload(payload)
 
@@ -36,7 +38,7 @@ def studio_git_status() -> dict[str, Any]:
         return git_status()
     except GitBrowserError as exc:
         raise AppError(
-            type_="https://contractapi.dev/problems/bad-request",
+            type_="https://contractapi.dev/problems/git-error",
             title="Git error",
             status=400,
             detail=str(exc),
@@ -51,7 +53,7 @@ def studio_git_branches() -> dict[str, Any]:
         return list_branches()
     except GitBrowserError as exc:
         raise AppError(
-            type_="https://contractapi.dev/problems/bad-request",
+            type_="https://contractapi.dev/problems/git-error",
             title="Git error",
             status=400,
             detail=str(exc),
@@ -66,7 +68,7 @@ def studio_git_tree(ref: str = "HEAD", path: str = "") -> dict[str, Any]:
         return list_tree(ref=ref, path=path)
     except GitBrowserError as exc:
         raise AppError(
-            type_="https://contractapi.dev/problems/bad-request",
+            type_="https://contractapi.dev/problems/git-error",
             title="Git error",
             status=400,
             detail=str(exc),
@@ -81,7 +83,7 @@ def studio_git_file(path: str, ref: str = "HEAD") -> dict[str, Any]:
         return read_file(ref=ref, path=path)
     except GitBrowserError as exc:
         raise AppError(
-            type_="https://contractapi.dev/problems/bad-request",
+            type_="https://contractapi.dev/problems/git-error",
             title="Git error",
             status=400,
             detail=str(exc),

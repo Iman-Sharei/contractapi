@@ -1300,3 +1300,8 @@
     margin-top: 0;
   }
 }
+
+.breakLine {
+  display: block;
+  margin-top: 4px;
+}

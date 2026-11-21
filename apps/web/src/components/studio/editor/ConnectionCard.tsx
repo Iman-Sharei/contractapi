@@ -80,12 +80,15 @@ export function ConnectionCard({ s }: { s: EditorState }) {
               onChange={(e) => patchApp({ auth: e.target.value as ApiSpecDraft["app"]["auth"] })}
             >
               {AUTH_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
+                <option key={o.value} value={o.value} disabled={o.value === "none" && !spec.app.read_only}>
                   {o.label}
                 </option>
               ))}
             </select>
-            <Hint>{authHelp(spec.app.auth)}</Hint>
+            <Hint>
+              {authHelp(spec.app.auth)}
+              {!spec.app.read_only && " Public is only possible for read-only APIs (turn on Read-only first)."}
+            </Hint>
           </label>
           <label>
             Version in the address (optional)

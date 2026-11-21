@@ -28,6 +28,7 @@ def endpoint_from_dbt_model(
     description: str | None = None,
     materialization: str | None = None,
     database: str | None = None,
+    unique_column: str | None = None,
 ) -> dict[str, Any]:
     """
     Build a read-only table endpoint draft from a dbt model description.
@@ -38,10 +39,12 @@ def endpoint_from_dbt_model(
     table = _safe_ident(name, slug)
     schema_name = _safe_ident(schema or "public", "public")
     fields = [c for c in (columns or []) if _IDENT.match(c)]
-    pk = fields[0] if fields else "id"
+    # dbt's `unique` test names the id; without one the first column is only a guess.
+    pk = unique_column if unique_column in fields else (fields[0] if fields else "id")
     ep: dict[str, Any] = {
         "name": slug,
-        "path": f"/{slug}",
+        "path": "/" + slug.replace("_", "-"),  # URL style: lowercase words joined by '-'
+
         "table": table,
         "schema": schema_name,
         "methods": ["GET"],
@@ -79,9 +82,12 @@ def import_from_schema_yml(payload: dict[str, Any] | list[Any]) -> list[dict[str
         if not isinstance(model, dict) or not model.get("name"):
             continue
         cols = []
+        unique: str | None = None
         for col in model.get("columns") or []:
             if isinstance(col, dict) and col.get("name"):
                 cols.append(str(col["name"]))
+                if unique is None and _has_unique_test(col):
+                    unique = str(col["name"])
             elif isinstance(col, str):
                 cols.append(col)
         out.append(
@@ -91,9 +97,43 @@ def import_from_schema_yml(payload: dict[str, Any] | list[Any]) -> list[dict[str
                 columns=cols,
                 description=model.get("description"),
                 materialization=(model.get("config") or {}).get("materialized"),
+                unique_column=unique,
             )
         )
     return out
+
+
+def _has_unique_test(col: dict[str, Any]) -> bool:
+    """dbt marks a column unique with `tests:`/`data_tests:` entries `unique` (string or dict)."""
+    tests = list(col.get("tests") or []) + list(col.get("data_tests") or [])
+    return any(t == "unique" or (isinstance(t, dict) and "unique" in t) for t in tests)
+
+
+def import_dbt_text(text: str) -> dict[str, Any]:
+    """schema.yml or manifest.json pasted as text (YAML is a superset of JSON)."""
+    import yaml
+
+    from contractapi.core.errors import AppError
+
+    try:
+        payload = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        where = f" near line {mark.line + 1}" if mark is not None else ""
+        raise AppError(
+            type_="https://contractapi.dev/problems/validation-error",
+            title="Validation failed",
+            status=422,
+            detail=f"This is not valid YAML or JSON{where}. Paste the whole schema.yml or manifest.json.",
+        ) from exc
+    if not isinstance(payload, (dict, list)):
+        raise AppError(
+            type_="https://contractapi.dev/problems/validation-error",
+            title="Validation failed",
+            status=422,
+            detail="Paste the contents of a dbt schema.yml (with models:) or a manifest.json.",
+        )
+    return import_dbt_payload(payload)
 
 
 def import_from_manifest(manifest: dict[str, Any]) -> list[dict[str, Any]]:

@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import jwt as pyjwt
 import pytest
+from conftest import KEY_HEADERS
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -22,6 +23,8 @@ from contractapi.infrastructure.kv import reset_kv
 from contractapi.infrastructure.security.jwt_tokens import issue_token
 
 PG = "postgresql://postgres:postgres@localhost:5433/app"
+
+pytestmark = pytest.mark.usefixtures("data_key")
 
 
 @pytest.fixture(autouse=True)
@@ -66,7 +69,9 @@ def pg():
 
 
 def _spec(endpoints, **app):
-    return parse_spec({"database": {"url": PG}, "app": {"api_prefix": "", "auth": "none", **app}, "endpoints": endpoints})
+    # APIs that allow changes need a key (public APIs are read-only).
+    auth = "none" if app.get("read_only", True) else "api_key"
+    return parse_spec({"database": {"url": PG}, "app": {"api_prefix": "", "auth": auth, **app}, "endpoints": endpoints})
 
 
 def _bearer(sub):
@@ -187,7 +192,7 @@ def test_webhook_private_opt_in_and_public_ok(monkeypatch):
 
 def test_sql_endpoint_cannot_write_even_via_functions(pg):
     spec = _spec([{"name": "n", "path": "/n", "sql": "SELECT nextval('med_h.seq') AS id", "fields": ["id"], "pagination": {"mode": "offset"}}])
-    client = TestClient(create_data_app(spec))
+    client = TestClient(create_data_app(spec), headers=KEY_HEADERS)
     assert client.get("/n").status_code >= 400
     with pg.connect() as conn:
         assert conn.execute(text("SELECT last_value, is_called FROM med_h.seq")).one() == (1, False)
@@ -211,7 +216,7 @@ def test_relations_capped_in_sql_and_hide_deleted(pg):
             }
         ]
     )
-    body = TestClient(create_data_app(spec)).get("/parents/1").json()
+    body = TestClient(create_data_app(spec), headers=KEY_HEADERS).get("/parents/1").json()
     assert [k["label"] for k in body["kids"]] == ["k1", "k3"]
 
 
@@ -252,7 +257,7 @@ def test_idempotency_claim_is_exclusive_and_released_on_failure(pg):
           "validations": [{"field": "name", "min_length": 3}]}],
         read_only=False,
     )
-    client = TestClient(create_data_app(spec))
+    client = TestClient(create_data_app(spec), headers=KEY_HEADERS)
     h = {"Idempotency-Key": "same-key"}
     assert client.post("/parents", json={"owner": "a", "name": "x"}, headers=h).status_code == 422
     assert client.post("/parents", json={"owner": "a", "name": "valid"}, headers=h).status_code == 201
@@ -279,7 +284,7 @@ def test_jobs_visible_only_to_their_owner(pg):
         read_only=False,
         auth="jwt",
     )
-    client = TestClient(create_data_app(spec))
+    client = TestClient(create_data_app(spec), headers=KEY_HEADERS)
     job_id = client.post("/parents", json={"owner": "a", "name": "async"}, headers=_bearer("alice")).json()["job_id"]
     assert client.get(f"/jobs/{job_id}", headers=_bearer("mallory")).status_code == 404
     assert client.get(f"/jobs/{job_id}", headers=_bearer("alice")).status_code == 200
@@ -316,7 +321,7 @@ def test_studio_introspect_error_is_actionable_without_secrets(monkeypatch):
 
 
 def test_trace_id_reused_only_when_well_formed(pg):
-    client = TestClient(create_data_app(_spec([{"name": "p", "path": "/p", "table": "parents", "schema": "med_h", "fields": ["id"]}])))
+    client = TestClient(create_data_app(_spec([{"name": "p", "path": "/p", "table": "parents", "schema": "med_h", "fields": ["id"]}])), headers=KEY_HEADERS)
     assert client.get("/health", headers={"X-Trace-Id": "abc12345-req"}).headers["x-trace-id"] == "abc12345-req"
     bad = client.get("/health", headers={"X-Trace-Id": "x" * 500}).headers["x-trace-id"]
     assert bad != "x" * 500 and len(bad) == 32

@@ -1,3 +1,5 @@
+import pytest
+from conftest import KEY_HEADERS
 from fastapi.testclient import TestClient
 
 from contractapi.application.data_api_builder import create_data_app
@@ -6,6 +8,8 @@ from contractapi.domain.models.spec import parse_spec
 from contractapi.infrastructure.cache_store import response_cache
 from contractapi.infrastructure.idempotency import idempotency_store
 
+pytestmark = pytest.mark.usefixtures("data_key")
+
 
 def _write_spec(db_url: str = "postgresql://postgres:postgres@localhost:5433/app"):
     return parse_spec(
@@ -13,7 +17,7 @@ def _write_spec(db_url: str = "postgresql://postgres:postgres@localhost:5433/app
             "database": {"url": db_url},
             "app": {
                 "read_only": False,
-                "auth": "none",
+                "auth": "api_key",
                 "api_prefix": "/v1",
                 "cache": {"enabled": True, "ttl_seconds": 60},
                 "idempotency": {"enabled": True, "required_for_writes": False},
@@ -55,7 +59,7 @@ def test_api_prefix_versioning_and_metrics():
     get_settings.cache_clear()
     response_cache.clear()
     app = create_data_app(_write_spec())
-    client = TestClient(app)
+    client = TestClient(app, headers=KEY_HEADERS)
     assert client.get("/health").json()["api_prefix"] == "/v1"
     assert client.get("/ready").status_code == 200
     listed = client.get("/v1/customers")
@@ -88,7 +92,7 @@ def test_idempotency_replay_and_conflict():
     idempotency_store.clear()
 
     app = create_data_app(_write_spec())
-    client = TestClient(app)
+    client = TestClient(app, headers=KEY_HEADERS)
     email = f"idem-{uuid.uuid4().hex[:8]}@example.com"
     headers = {"Idempotency-Key": f"key-{uuid.uuid4().hex}"}
     body = {"name": "Idem User", "email": email}
@@ -128,7 +132,7 @@ def test_cache_hit_on_second_get():
     get_settings.cache_clear()
     response_cache.clear()
     app = create_data_app(_write_spec())
-    client = TestClient(app)
+    client = TestClient(app, headers=KEY_HEADERS)
     assert client.get("/v1/customers").status_code == 200
     assert client.get("/v1/customers").status_code == 200
     rendered = metrics.render_prometheus()

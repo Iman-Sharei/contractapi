@@ -105,6 +105,7 @@ def _after_write(
     event: str,
     payload: dict[str, Any],
     resource_id: Any,
+    api: str | None = None,
 ) -> None:
     """Same side effects as REST writes: cache invalidation, audit, webhooks."""
     from contractapi.application.data_api_builder import _invalidate_endpoint_cache
@@ -115,6 +116,7 @@ def _after_write(
     if spec.app.audit_enabled:
         audit_event(
             action=f"graphql.{event}",
+            api=api,
             endpoint=ep.name,
             resource_id=resource_id,
             principal=principal,
@@ -143,7 +145,7 @@ def _mutate_create(info: Any, name: str, data: dict[str, Any]) -> dict[str, Any]
         raise ValueError(conflict_error(exc).detail) from exc
     except SQLAlchemyError as exc:
         raise ValueError(db_error(exc).detail) from exc
-    _after_write(spec, ep, principal, "create", result, result.get(ep.primary_key))
+    _after_write(spec, ep, principal, "create", result, result.get(ep.primary_key), info.context.get("api_name"))
     return _visible(spec, ep, principal, result)
 
 
@@ -173,7 +175,7 @@ def _mutate_update(info: Any, name: str, item_id: Any, data: dict[str, Any]) -> 
         raise ValueError(conflict_error(exc).detail) from exc
     except SQLAlchemyError as exc:
         raise ValueError(db_error(exc).detail) from exc
-    _after_write(spec, ep, principal, "update", result, item_id)
+    _after_write(spec, ep, principal, "update", result, item_id, info.context.get("api_name"))
     return _visible(spec, ep, principal, result)
 
 
@@ -199,7 +201,7 @@ def _mutate_delete(info: Any, name: str, item_id: Any) -> dict[str, Any]:
         raise ValueError(db_error(exc).detail) from exc
     if result.rowcount == 0:
         raise ValueError(f"{name} with {pk}={item_id} not found")
-    _after_write(spec, ep, principal, "delete", {"id": _jsonable(item_id)}, item_id)
+    _after_write(spec, ep, principal, "delete", {"id": _jsonable(item_id)}, item_id, info.context.get("api_name"))
     return {"deleted": True, "id": _jsonable(item_id), "endpoint": name}
 
 

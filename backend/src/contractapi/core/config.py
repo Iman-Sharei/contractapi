@@ -23,6 +23,13 @@ class Settings(BaseSettings):
         description="Required on studio routes via X-API-Key (OWASP: protect management plane).",
     )
     cors_origins: str = "http://localhost:3000"
+    public_api_base: str = Field(
+        default="http://localhost:8000",
+        description=(
+            "Address callers use to reach this server (e.g. https://api.company.com). Written "
+            "into exported OpenAPI, Postman and SDK files so they work outside this machine."
+        ),
+    )
     secrets_encryption_key: str = Field(
         default="",
         description="Encrypt the Studio secret store at rest (AES-256-GCM). Keep it outside SPECS_DIR.",
@@ -165,6 +172,9 @@ class Settings(BaseSettings):
             problems.append("STUDIO_API_KEY is a default/short value")
         if self.jwt_secret in _DEV_SECRETS or len(self.jwt_secret) < 32:
             problems.append("JWT_SECRET is a default value or shorter than 32 chars")
+        if any(k in _DEV_SECRETS or len(k) < 16 for k in self.data_api_key_set):
+            # These keys open every data API: a guessable one is an open door.
+            problems.append("DATA_API_KEYS contains a default or short key (min 16 chars)")
         return problems
 
     def assert_production_safe(self) -> None:
@@ -189,6 +199,7 @@ _DEV_SECRETS = frozenset(
         "dev-studio-key-change-me",
         "dev-jwt-secret-change-me-please-32chars",
         "change-me",
+        "dev-data-key",
     }
 )
 

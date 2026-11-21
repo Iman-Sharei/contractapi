@@ -185,6 +185,7 @@ def mount_graphql(app: Any, engine: Engine, spec: ApiSpec) -> None:
             "mutation_ops": mutation_ops,
             "spec": spec,
             "principal": principal,
+            "api_name": getattr(app.state, "api_name", None),
         }
 
     # Postponed annotations: bind the real class so FastAPI injects the connection.

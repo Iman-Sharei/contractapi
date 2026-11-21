@@ -19,6 +19,16 @@ def _constant_time_equals(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
 
 
+def _actor(claims: dict[str, Any]) -> dict[str, Any]:
+    """Who is acting in Studio, for the audit trail (never the token itself)."""
+    who = claims.get("email") or claims.get("preferred_username") or claims.get("sub") or "oidc-user"
+    return {"sub": str(who), "roles": ["studio"]}
+
+
+def studio_actor(request: Request) -> dict[str, Any]:
+    return getattr(request.state, "studio_actor", None) or {"sub": "studio", "roles": ["studio"]}
+
+
 def require_studio_api_key(
     request: Request,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
@@ -29,6 +39,7 @@ def require_studio_api_key(
     """
     settings = get_settings()
     if x_api_key and _constant_time_equals(x_api_key, settings.studio_api_key):
+        request.state.studio_actor = {"sub": "studio-key", "roles": ["studio"]}
         return "api_key"
 
     from contractapi.infrastructure.security.oidc import (
@@ -40,13 +51,13 @@ def require_studio_api_key(
     if oidc_enabled(settings) and authorization:
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() == "bearer" and token.strip():
-            verify_studio_oidc_token(token.strip(), settings)
+            request.state.studio_actor = _actor(verify_studio_oidc_token(token.strip(), settings))
             return "oidc"
 
     if oidc_enabled(settings):
         cookie_token = request.cookies.get(oidc_cookie_name(settings))
         if cookie_token:
-            verify_studio_oidc_token(cookie_token, settings)
+            request.state.studio_actor = _actor(verify_studio_oidc_token(cookie_token, settings))
             return "oidc_cookie"
 
     detail = "Missing or invalid X-API-Key for studio."

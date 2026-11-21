@@ -74,7 +74,13 @@ def _index_operations(doc: dict[str, Any]) -> dict[str, dict[str, Any]]:
             if method.startswith("x-") or not isinstance(op, dict):
                 continue
             key = f"{method.upper()} {path}"
+            # Response fields as-is; inputs callers send are marked: "?status" (query
+            # parameter) and "body: total" (request field). Removing any of them breaks callers.
             props = _response_properties(doc, op)
+            props |= {f"?{p['name']}" for p in op.get("parameters") or []
+                      if isinstance(p, dict) and p.get("in") == "query" and "name" in p}
+            body = ((op.get("requestBody") or {}).get("content") or {}).get("application/json") or {}
+            props |= {f"body: {f}" for f in _schema_props(doc, body.get("schema") or {})}
             out[key] = {"properties": props}
     return out
 
@@ -94,16 +100,15 @@ def _response_properties(doc: dict[str, Any], op: dict[str, Any]) -> set[str]:
 
 def _schema_props(doc: dict[str, Any], schema: dict[str, Any]) -> set[str]:
     schema = _resolve_ref(doc, schema)
-    if "properties" in schema and isinstance(schema["properties"], dict):
-        return set(schema["properties"].keys())
-    # unwrap list envelopes: { items: { items: {...} } } or { properties: { items: ...}}
     props = schema.get("properties")
-    if isinstance(props, dict) and "items" in props:
-        items_schema = props["items"]
-        if isinstance(items_schema, dict):
-            if items_schema.get("type") == "array":
-                return _schema_props(doc, items_schema.get("items") or {})
-            return _schema_props(doc, items_schema)
+    # A page ({items: [row, ...], limit, ...}): callers depend on the row fields, so compare
+    # those (checked first: the envelope's own keys never change).
+    if isinstance(props, dict) and isinstance(props.get("items"), dict):
+        items_schema = _resolve_ref(doc, props["items"])
+        if items_schema.get("type") == "array":
+            return _schema_props(doc, items_schema.get("items") or {})
+    if isinstance(props, dict):
+        return set(props.keys())
     if schema.get("type") == "array":
         return _schema_props(doc, schema.get("items") or {})
     return set()

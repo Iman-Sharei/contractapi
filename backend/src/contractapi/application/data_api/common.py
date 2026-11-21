@@ -6,7 +6,7 @@ import hashlib
 import json
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import date, datetime, tzinfo
+from datetime import date, datetime, time, tzinfo
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -36,35 +36,28 @@ from contractapi.infrastructure.security.auth import (
 logger = get_logger("contractapi.data")
 
 
-_SQLA_TO_PY: dict[str, type] = {
-    "INTEGER": int,
-    "BIGINT": int,
-    "SMALLINT": int,
-    "NUMERIC": float,
-    "DECIMAL": float,
-    "REAL": float,
-    "DOUBLE": float,
-    "FLOAT": float,
-    "BOOLEAN": bool,
-    "TEXT": str,
-    "VARCHAR": str,
-    "CHAR": str,
-    "UUID": str,
-    "DATE": date,
-    "TIMESTAMP": datetime,
-    "DATETIME": datetime,
-    "JSON": dict,
-    "JSONB": dict,
-}
+def _python_type(sa_type: Any) -> Any:
+    """Python type of a column for request/response models.
 
-
-def _python_type(sa_type: Any) -> type:
-    key = type(sa_type).__name__.upper()
-    text = str(sa_type).upper()
-    for token, py in _SQLA_TO_PY.items():
-        if token in key or token in text:
-            return py
-    return str
+    Uses SQLAlchemy's own mapping, so dialect types are right: MySQL DATETIME / SQL Server
+    DATETIME2 → datetime (not date), TINYINT → int, BIT → bool. Exact decimals are typed by
+    write_models when the API returns them as text."""
+    try:
+        py = sa_type.python_type
+    except (NotImplementedError, AttributeError):
+        py = object
+    if py is Decimal:
+        return float
+    if py in (bool, int, float, str, date, datetime, time, list):
+        return py
+    name = type(sa_type).__name__.upper()
+    if py is dict or "JSON" in name:
+        return Any  # JSON columns hold objects, arrays or scalars
+    if "MONEY" in name:
+        return float
+    if name == "YEAR":
+        return int
+    return str  # UUID, intervals, network addresses, … travel as text in JSON
 
 
 @dataclass(frozen=True)
@@ -312,6 +305,7 @@ def _audit(spec: ApiSpec, action: str, endpoint: EndpointSpec, request: Request,
         return
     audit_event(
         action=action,
+        api=getattr(request.app.state, "api_name", None),
         endpoint=endpoint.name,
         principal=getattr(request.state, "principal", None),
         **kwargs,

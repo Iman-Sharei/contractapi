@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from conftest import KEY_HEADERS
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -99,7 +100,7 @@ def test_graphql_table_and_sql_reads():
     assert metrics["data"]["endpoint"][0]["status"] == "ok"
 
 
-def test_graphql_mutations_create_update_delete():
+def test_graphql_mutations_create_update_delete(data_key):
     if not graphql_available():
         pytest.skip("strawberry not installed")
     url, engine = _duck_engine()
@@ -114,7 +115,7 @@ def test_graphql_mutations_create_update_delete():
                 "version": "0.5.0",
                 "description": "t",
                 "read_only": False,
-                "auth": "none",
+                "auth": "api_key",  # APIs that allow changes cannot be public
                 "api_prefix": "",
             },
             "endpoints": [
@@ -137,7 +138,7 @@ def test_graphql_mutations_create_update_delete():
 
     app = FastAPI()
     mount_graphql(app, engine, spec)
-    client = TestClient(app)
+    client = TestClient(app, headers=KEY_HEADERS)
 
     ops = client.post("/graphql", json={"query": "{ availableMutations }"})
     assert ops.status_code == 200, ops.text

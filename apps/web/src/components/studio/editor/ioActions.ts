@@ -27,9 +27,11 @@ export function ioActions(c: EditorCore) {
       return;
     }
     startTransition(async () => {
+      let saved = false;
       try {
         // Save first, so what is live is always the saved version (no hidden drafts).
         await saveSpec(specName, draftSpec);
+        saved = true;
         setDirty(false);
         await activateSpec(draftSpec, specName);
         setStatus(`Saved and live at ${getApiBase()}/apis/${specName}`);
@@ -41,7 +43,12 @@ export function ioActions(c: EditorCore) {
           setEditorTab("play");
         }
       } catch (e) {
-        setStatus(null, e instanceof Error ? e.message : "Activate failed");
+        const reason = e instanceof Error ? e.message : "Activate failed";
+        // The save worked but going live did not: say that the old version is still answering.
+        setStatus(
+          null,
+          saved ? `Saved, but not made live: ${reason} The version that was live before keeps answering.` : reason,
+        );
       }
     });
   }

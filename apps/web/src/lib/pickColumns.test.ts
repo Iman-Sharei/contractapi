@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultSafeColumns, ensurePrimaryKey, formatApiPath, hasDecimalColumns, initialPicks } from "./pickColumns";
+import { defaultSafeColumns, endpointDefaults, ensurePrimaryKey, formatApiPath, hasDecimalColumns, initialPicks } from "./pickColumns";
 import type { TableInfo } from "./types";
 
 const table: TableInfo = {
@@ -57,5 +57,18 @@ describe("initialPicks", () => {
   it("ticks every table of a small database and none of a big one", () => {
     expect(Object.keys(initialPicks([mk("a"), mk("b")]))).toEqual(["public.a", "public.b"]);
     expect(initialPicks(["a", "b", "c", "d", "e", "f"].map(mk))).toEqual({});
+  });
+});
+
+describe("endpointDefaults", () => {
+  const W = ["POST", "PATCH", "PUT", "DELETE"];
+  it("uses next-page links and full writes only with a unique id", () => {
+    expect(endpointDefaults(table, true, W)).toMatchObject({ uniqueId: true, mode: "cursor", methods: ["GET", ...W] });
+  });
+  it("falls back to page numbers and create-only writes without one", () => {
+    const view = { ...table, kind: "view", primary_keys: [] } as TableInfo;
+    const d = endpointDefaults(view, true, W);
+    expect(d).toMatchObject({ uniqueId: false, mode: "offset", methods: ["GET", "POST"] });
+    expect(endpointDefaults(view, false, W).methods).toEqual(["GET"]);
   });
 });

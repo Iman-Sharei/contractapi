@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from conftest import KEY_HEADERS
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -55,7 +56,7 @@ def _spec(**endpoint_extra):
             "database": {"url": "postgresql://postgres:postgres@localhost:5433/app"},
             "app": {
                 "read_only": False,
-                "auth": "none",
+                "auth": "api_key",  # APIs that allow changes cannot be public
                 "api_prefix": "/v1",
                 "cache": {"enabled": False},
                 "idempotency": {"enabled": False},
@@ -68,13 +69,13 @@ def _spec(**endpoint_extra):
 
 
 @pytest.fixture()
-def client():
+def client(data_key):
     _pg_or_skip()
     get_settings.cache_clear()
     response_cache.clear()
     idempotency_store.clear()
     app = create_data_app(_spec())
-    return TestClient(app)
+    return TestClient(app, headers=KEY_HEADERS)
 
 
 def test_rich_filters_and_sparse_fields(client: TestClient):

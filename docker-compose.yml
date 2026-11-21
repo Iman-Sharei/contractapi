@@ -70,6 +70,8 @@ services:
       DATA_API_KEYS: ${DATA_API_KEYS:-dev-data-key}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-please-32chars}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      # Address callers use; exported OpenAPI/Postman/SDK point here (same as the web's).
+      PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
       REDIS_URL: redis://redis:6379/0
       JOB_QUEUE_ENABLED: ${JOB_QUEUE_ENABLED:-false}
       SPECS_DIR: /data/specs

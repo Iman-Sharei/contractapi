@@ -4,6 +4,49 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Handing an API to another team
+- Each API's OpenAPI now declares its key (API key header or Bearer token), so `/docs` has an
+  **Authorize** button and generated clients send it; lists every filter (`status__in`, …),
+  `?q=`, `?fields=`, `?format=`; typed response schemas from the real columns; the
+  `If-Match` / `Idempotency-Key` headers; and the Problem Details errors each call can return
+- Exported OpenAPI, Postman and Python client point at the API's real address
+  (`PUBLIC_API_BASE` + `/apis/{name}`). Before, Postman and the client called `/data` (the
+  primary API, possibly another one) and Postman's PATCH/PUT/DELETE had no `/:id`
+- The Python client covers every allowed operation (create, bulk, update with ETag, delete,
+  restore), follows pages (`iter_<name>`), returns a pandas DataFrame (`<name>_dataframe`), raises
+  `ApiError` with the Problem Details, and supports JWT APIs
+- **Save & make live** lists what would break callers of the live version (removed operations,
+  fields, filters, input fields) and asks first; `POST /studio/specs/{name}/compare-draft`.
+  Version comparison now also catches removed filters and input fields, and removed fields of
+  list endpoints (it only looked at the page wrapper before)
+
+### Safety and governance
+- A public API (no key) can no longer allow create/update/delete: refused in the spec, the
+  wizard and Settings (anyone reaching the server could change data)
+- An id column that is not unique (views, tables without a primary key) can no longer drive
+  change/delete by id (one request could change many rows) or next-page links (rows could be
+  skipped). The wizard gives such sources page numbers and create-only writes; page-number
+  paging sorts by every column, so pages never repeat or skip rows
+- Every Studio change is in the audit trail with who made it: make live / stop, save, delete,
+  restore, copy to an environment, API keys created / revoked, test tokens. Activity reads the
+  log file (it was empty after each restart), names the API of data changes, and shows who /
+  what / where / when in plain words (the time column was always "—")
+- Copying an API to staging / production keeps the target's own database connection (it used
+  to overwrite production's connection with the source's); a first copy says it still uses the
+  same database
+- Production refuses to start with the demo data key `dev-data-key` or short data keys
+
+### Fixes
+- Column types: MySQL `DATETIME`, SQL Server `DATETIME2` / `DATETIMEOFFSET` / `SMALLDATETIME` were
+  treated as dates (writes with a time were refused); `TINYINT`, `BIT`, `MEDIUMINT`, `MONEY`
+  were treated as text (`true` / numbers refused)
+- SQL Server: `?sort=id` with page-number paging answered 500 (the id was in ORDER BY twice)
+- Custom SQL endpoints sorted by a non-unique column now add the id as tie-breaker
+- Saving an API file with a mistake answered 500; now 400 with the reason
+- dbt import reads `schema.yml` as YAML (it wanted JSON), uses the column with dbt's `unique`
+  test as the id, makes `/fct-orders`-style paths, and saves the models as a new draft API
+- Tools: an empty Git browser says why
+
 ### Business rules without code
 All of these are spec options and Studio controls (endpoint → Access & rules → Write rules,
 Settings → Data format). Defaults keep today's behaviour.

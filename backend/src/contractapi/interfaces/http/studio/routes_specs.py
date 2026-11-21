@@ -4,14 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
+from sqlalchemy.exc import SQLAlchemyError
 
+from contractapi.application.client_exports import compare_draft_with_saved
 from contractapi.application.openapi_diff import diff_openapi
 from contractapi.application.schema_drift import check_database_changes
+from contractapi.application.studio_actions import (
+    delete_api,
+    promote_api,
+    restore_version,
+    save_api,
+)
 from contractapi.core.errors import AppError
 from contractapi.infrastructure.db.errors import safe_db_message
 from contractapi.infrastructure.persistence import spec_repo
+from contractapi.infrastructure.security.auth import studio_actor
 from contractapi.interfaces.http.studio.presenters import (
     _spec_json,
     _spec_yaml,
@@ -19,8 +28,10 @@ from contractapi.interfaces.http.studio.presenters import (
 from contractapi.interfaces.http.studio.schemas import (
     DatabaseChangesResponse,
     DiffOpenApiRequest,
+    OpenApiPreviewRequest,
     ProblemDetails,
     SaveSpecRequest,
+    SpecDiffResponse,
 )
 
 # Included by studio.router under /studio with its auth dependency.
@@ -33,8 +44,8 @@ def studio_list_specs() -> dict[str, Any]:
 
 
 @router.post("/specs")
-def studio_save_spec(body: SaveSpecRequest) -> dict[str, Any]:
-    spec = spec_repo.save_spec(body.name, body.spec)
+def studio_save_spec(body: SaveSpecRequest, request: Request) -> dict[str, Any]:
+    spec = save_api(body.name, body.spec, actor=studio_actor(request))
     return {
         "saved": True,
         "name": body.name,
@@ -62,9 +73,27 @@ def studio_database_changes(name: str) -> dict[str, Any]:
     return check_database_changes(spec_repo.read_spec(name))
 
 
+@router.post(
+    "/specs/{name}/compare-draft",
+    response_model=SpecDiffResponse,
+    summary="What a draft would change for callers of the saved API (breaking changes)",
+    responses={code: {"model": ProblemDetails} for code in (400, 401, 422)},
+)
+def studio_compare_draft(name: str, body: OpenApiPreviewRequest) -> dict[str, Any]:
+    try:
+        return compare_draft_with_saved(name, body.spec)
+    except (SQLAlchemyError, ValueError) as exc:
+        raise AppError(
+            type_="https://contractapi.dev/problems/database-unreachable",
+            title="Cannot compare",
+            status=400,
+            detail=f"Could not build both versions to compare them: {safe_db_message(exc)}",
+        ) from exc
+
+
 @router.delete("/specs/{name}")
-def studio_delete_spec(name: str) -> dict[str, bool]:
-    spec_repo.delete_spec(name)
+def studio_delete_spec(name: str, request: Request) -> dict[str, bool]:
+    delete_api(name, actor=studio_actor(request))
     return {"deleted": True}
 
 
@@ -72,7 +101,7 @@ def studio_delete_spec(name: str) -> dict[str, bool]:
 def studio_export_openapi(name: str) -> JSONResponse:
     spec = spec_repo.read_spec(name)
     try:
-        doc = spec_repo.export_openapi_dict(spec)
+        doc = spec_repo.export_openapi_dict(spec, name)
     except Exception as exc:
         raise AppError(
             type_="https://contractapi.dev/problems/database-unreachable",
@@ -88,7 +117,7 @@ def studio_export_openapi_yaml(name: str) -> str:
     import yaml
 
     spec = spec_repo.read_spec(name)
-    doc = spec_repo.export_openapi_dict(spec)
+    doc = spec_repo.export_openapi_dict(spec, name)
     return yaml.safe_dump(doc, sort_keys=False)
 
 
@@ -124,10 +153,9 @@ def studio_spec_snapshot(name: str, snapshot_id: str) -> dict[str, Any]:
 
 
 @router.post("/specs/{name}/history/{snapshot_id}/restore")
-def studio_restore_snapshot(name: str, snapshot_id: str) -> dict[str, Any]:
+def studio_restore_snapshot(name: str, snapshot_id: str, request: Request) -> dict[str, Any]:
     """Restore a historical snapshot over the current saved spec (snapshots again first)."""
-    snap = spec_repo.read_snapshot(name, snapshot_id)
-    saved = spec_repo.save_spec(name, snap.model_dump(by_alias=True, mode="json"))
+    saved = restore_version(name, snapshot_id, actor=studio_actor(request))
     return {
         "restored": True,
         "name": name,
@@ -137,7 +165,7 @@ def studio_restore_snapshot(name: str, snapshot_id: str) -> dict[str, Any]:
 
 
 @router.post("/specs/{name}/promote")
-def studio_promote(name: str, body: dict[str, Any]) -> dict[str, Any]:
+def studio_promote(name: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     env = str(body.get("environment") or "staging")
     if env not in {"development", "staging", "production"}:
         raise AppError(
@@ -146,56 +174,26 @@ def studio_promote(name: str, body: dict[str, Any]) -> dict[str, Any]:
             status=422,
             detail="environment must be development|staging|production",
         )
-    spec = spec_repo.promote_spec(name, environment=env)
+    result = promote_api(name, env, actor=studio_actor(request))
     return {
         "promoted": True,
         "environment": env,
-        "name": f"{name}_{env}" if not name.endswith(f"_{env}") else name,
-        "yaml": _spec_yaml(spec),
+        "name": result["name"],
+        "database_kept": result["database_kept"],
+        "yaml": _spec_yaml(result["spec"]),
     }
 
 
 @router.get("/specs/{name}/postman")
 def studio_postman(name: str) -> JSONResponse:
-    from contractapi.application.postman_export import build_postman_collection
+    from contractapi.application.client_exports import build_postman_collection
 
     spec = spec_repo.read_spec(name)
-    return JSONResponse(build_postman_collection(spec))
+    return JSONResponse(build_postman_collection(spec, name))
 
 
 @router.get("/specs/{name}/sdk.py", response_class=PlainTextResponse)
 def studio_sdk_python(name: str) -> str:
-    spec = spec_repo.read_spec(name)
-    prefix = spec.app.api_prefix or ""
-    lines = [
-        "# Auto-generated thin client for contractapi — regenerate after contract changes",
-        "from __future__ import annotations",
-        "import os",
-        "import httpx",
-        "",
-        "BASE = os.environ.get('CONTRACTAPI_BASE', 'http://127.0.0.1:8000/data')",
-        "API_KEY = os.environ.get('DATA_API_KEY', '')",
-        "",
-        "def _headers():",
-        "    h = {'Accept': 'application/json'}",
-        "    if API_KEY:",
-        "        h['X-API-Key'] = API_KEY",
-        "    return h",
-        "",
-    ]
-    for ep in spec.endpoints:
-        fn = ep.name
-        path = f"{prefix}{ep.path}"
-        lines.append(f"def list_{fn}(**params):")
-        lines.append(f"    r = httpx.get(f'{{BASE}}{path}', params=params, headers=_headers())")
-        lines.append("    r.raise_for_status()")
-        lines.append("    return r.json()")
-        lines.append("")
-        lines.append(f"def get_{fn}(item_id, **params):")
-        lines.append(
-            f"    r = httpx.get(f'{{BASE}}{path}/{{item_id}}', params=params, headers=_headers())"
-        )
-        lines.append("    r.raise_for_status()")
-        lines.append("    return r.json()")
-        lines.append("")
-    return "\n".join(lines)
+    from contractapi.application.client_exports import build_python_sdk
+
+    return build_python_sdk(spec_repo.read_spec(name), name)

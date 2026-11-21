@@ -68,7 +68,7 @@ def _build_api(name: str, spec: Any) -> tuple[ASGIApp, float | None]:
     """The API's app, or a 503 stand-in plus the failure time; one broken API never takes
     down the others."""
     try:
-        return _attach_handlers(create_data_app(spec)), None
+        return _attach_handlers(create_data_app(spec, name=name)), None
     except Exception as exc:  # noqa: BLE001 — reported to callers as 503, details in the log
         _log.warning("API %s could not start: %s", name, exc)
         return _unavailable_app(name), time.monotonic()

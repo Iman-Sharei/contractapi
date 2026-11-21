@@ -47,9 +47,12 @@ export function VersionsCard({
 
   async function promote() {
     const target = `${promoteName}_${env}`;
+    const exists = specs.some((x) => x.name === target);
     const ok = await confirm({
       title: `Copy '${promoteName}' to ${env}?`,
-      body: `A copy named '${target}' is saved and marked for ${env}. The original is not changed.`,
+      body: exists
+        ? `'${target}' gets this version's endpoints and settings. It keeps its own database connection, so ${env} keeps reading its own data. The original is not changed.`
+        : `A copy named '${target}' is saved and marked for ${env}. It still uses the same database as '${promoteName}': open it and point it at the ${env} database in Settings before anyone relies on it.`,
       confirmLabel: "Copy it",
       tone: "primary",
     });

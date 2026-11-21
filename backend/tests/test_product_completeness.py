@@ -8,6 +8,7 @@ import stat
 from types import SimpleNamespace
 
 import pytest
+from conftest import KEY_HEADERS
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -20,6 +21,8 @@ from contractapi.infrastructure.db.engine import create_engine_for_config, creat
 from contractapi.infrastructure.security.jwt_tokens import issue_token
 
 PG = "postgresql://postgres:postgres@localhost:5433/app"
+
+pytestmark = pytest.mark.usefixtures("data_key")
 
 
 @pytest.fixture(autouse=True)
@@ -78,7 +81,8 @@ def _orders_spec(*, app=None, **ep):
         **ep,
     }
     return parse_spec(
-        {"database": {"url": PG}, "app": {"api_prefix": "", "auth": "none", **(app or {})}, "endpoints": [endpoint]}
+        # APIs that allow changes need a key (public APIs are read-only).
+        {"database": {"url": PG}, "app": {"api_prefix": "", "auth": "none" if (app or {}).get("read_only", True) else "api_key", **(app or {})}, "endpoints": [endpoint]}
     )
 
 
@@ -90,7 +94,7 @@ def _bearer(roles):
 
 
 def test_filters_on_numeric_date_bool_columns(pg):
-    c = TestClient(create_data_app(_orders_spec()))
+    c = TestClient(create_data_app(_orders_spec()), headers=KEY_HEADERS)
 
     def ids(**params):
         r = c.get("/orders", params=params)
@@ -107,7 +111,7 @@ def test_filters_on_numeric_date_bool_columns(pg):
 
 
 def test_bad_filter_value_is_400_with_guidance(pg):
-    c = TestClient(create_data_app(_orders_spec()))
+    c = TestClient(create_data_app(_orders_spec()), headers=KEY_HEADERS)
     r = c.get("/orders", params={"placed_on__gte": "yesterday"})
     assert r.status_code == 400
     assert "ISO date" in r.json()["detail"]
@@ -131,7 +135,7 @@ def test_sql_endpoint_bad_values_are_client_errors(pg):
             ],
         }
     )
-    c = TestClient(create_data_app(spec))
+    c = TestClient(create_data_app(spec), headers=KEY_HEADERS)
     assert c.get("/big", params={"min": "lots"}).status_code == 422
     assert c.get("/big", params={"id": "abc"}).status_code == 400
 
@@ -149,7 +153,7 @@ def test_rbac_applies_to_writes_filters_and_sort(pg):
         methods=["GET", "POST"],
         writable_fields=["owner", "title", "total"],
     )
-    c = TestClient(create_data_app(spec))
+    c = TestClient(create_data_app(spec), headers=KEY_HEADERS)
     h = _bearer(["viewer"])
     created = c.post("/orders", json={"owner": "a", "title": "t", "total": 5}, headers=h)
     assert created.status_code == 201, created.text
@@ -165,7 +169,7 @@ def test_endpoint_roles_enforced_on_writes(pg):
         writable_fields=["owner", "title"],
         roles=["admin"],
     )
-    c = TestClient(create_data_app(spec))
+    c = TestClient(create_data_app(spec), headers=KEY_HEADERS)
     h = _bearer(["viewer"])
     assert c.post("/orders", json={"owner": "a", "title": "x"}, headers=h).status_code == 403
     assert c.delete("/orders/1", headers=h).status_code == 403
@@ -180,7 +184,7 @@ def test_put_replaces_and_post_sets_location(pg):
         methods=["GET", "POST", "PUT", "PATCH"],
         writable_fields=["owner", "title"],
     )
-    c = TestClient(create_data_app(spec))
+    c = TestClient(create_data_app(spec), headers=KEY_HEADERS)
     created = c.post("/orders", json={"owner": "a", "title": "new"})
     assert created.status_code == 201
     new_id = created.json()["id"]
@@ -202,7 +206,7 @@ def test_get_etag_works_for_if_match_with_relations(pg):
              "foreign_key": "order_id", "fields": ["id", "sku"]}
         ],
     )
-    c = TestClient(create_data_app(spec))
+    c = TestClient(create_data_app(spec), headers=KEY_HEADERS)
     etag = c.get("/orders/1").headers["etag"]
     r = c.patch("/orders/1", json={"title": "renamed"}, headers={"If-Match": etag})
     assert r.status_code == 200, r.text
@@ -377,7 +381,7 @@ def test_links_and_docs_keep_the_mount_prefix(pg, monkeypatch):
 
 
 def test_csv_via_accept_is_not_served_from_the_json_cache(pg):
-    client = TestClient(create_data_app(_orders_spec()))
+    client = TestClient(create_data_app(_orders_spec()), headers=KEY_HEADERS)
     assert client.get("/orders?limit=2").headers["content-type"].startswith("application/json")
     r = client.get("/orders?limit=2", headers={"Accept": "text/csv"})
     assert r.headers["content-type"].startswith("text/csv"), r.headers["content-type"]

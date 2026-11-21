@@ -6,6 +6,7 @@ import type {
   ApiSpecDraft,
   DatabaseChanges,
   DatabaseDriver,
+  EndpointDraft,
   OpenApiDiff,
   SpecListItem,
   StudioHealth,
@@ -196,6 +197,14 @@ export async function checkDatabaseChanges(name: string) {
   return studioFetch<DatabaseChanges>(`/specs/${encodeURIComponent(name)}/database-changes`);
 }
 
+/** What saving this draft would change for callers of the saved API. */
+export async function compareDraft(name: string, spec: ApiSpecDraft) {
+  return studioFetch<OpenApiDiff>(`/specs/${encodeURIComponent(name)}/compare-draft`, {
+    method: "POST",
+    body: JSON.stringify({ spec }),
+  });
+}
+
 export async function diffOpenApi(before: object, after: object) {
   return studioFetch<OpenApiDiff>("/openapi/diff", {
     method: "POST",
@@ -237,11 +246,12 @@ export async function previewSql(
   });
 }
 
-export async function importDbt(payload: Record<string, unknown> | unknown[]) {
-  return studioFetch<{ source: string; count: number; endpoints: Array<Record<string, unknown>> }>(
-    "/import/dbt",
-    { method: "POST", body: JSON.stringify(payload) },
-  );
+/** dbt schema.yml (YAML or JSON) or manifest.json text → endpoint drafts. */
+export async function importDbt(text: string) {
+  return studioFetch<{ source: string; count: number; endpoints: EndpointDraft[] }>("/import/dbt", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
 }
 
 export async function gitStatus() {

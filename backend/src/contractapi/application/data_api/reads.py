@@ -183,7 +183,6 @@ def _add_list(
             if has_more and items:
                 next_cursor = encode_cursor(items[-1][endpoint.primary_key])
         else:
-            pk_col = table.c[endpoint.primary_key]
             if sort:
                 descending = sort.startswith("-")
                 col_name = sort[1:] if descending else sort
@@ -199,8 +198,17 @@ def _add_list(
                 stmt = stmt.order_by(
                     desc(table.c[col_name]) if descending else asc(table.c[col_name])
                 )
-            # Deterministic paging: always end with the primary key as tie-breaker.
-            stmt = stmt.order_by(asc(pk_col))
+            # Deterministic paging: end with the primary key as tie-breaker. Without a unique id,
+            # sort by every orderable column so pages never repeat or skip rows. A column is never
+            # listed twice (SQL Server rejects ORDER BY id, id).
+            used = {sort.lstrip("-")} if sort else set()
+            tie = [endpoint.primary_key]
+            if not table.info.get("id_is_unique", True):
+                tie += [f for f in endpoint.fields if _orderable(table.c[f])]
+            for name in dict.fromkeys(tie):
+                if name not in used:
+                    stmt = stmt.order_by(asc(table.c[name]))
+                    used.add(name)
             try:
                 with engine.connect() as conn:
                     count_stmt = select(func.count()).select_from(table)
@@ -361,3 +369,9 @@ def _load_relations(engine, metadata, relations, items) -> None:  # type: ignore
             status=500,
             detail="Nested data could not be loaded. Check the relation settings in Studio.",
         ) from exc
+
+
+def _orderable(column) -> bool:  # type: ignore[no-untyped-def]
+    from datetime import date, datetime, time
+
+    return _python_type(column.type) in (int, float, str, bool, date, datetime, time)

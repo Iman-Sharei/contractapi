@@ -19,6 +19,7 @@ import { defaultPath } from "@/lib/pathRules";
 import {
   AUTO_PICK_MAX_TABLES,
   defaultSafeColumns,
+  endpointDefaults,
   ensurePrimaryKey,
   hasDecimalColumns,
   initialPicks,
@@ -106,7 +107,7 @@ export default function NewApiWizardPage() {
       const table = tables.find((t) => tableKey(t) === key);
       if (!table) continue;
       const name = uniqueEndpointName(table.name, used);
-      const pk = table.primary_keys[0] ?? table.columns.find((c) => !c.sensitive)?.name ?? "id";
+      const { pk, mode, methods } = endpointDefaults(table, allowWrites, WRITE_METHODS);
       const fieldsPicked = ensurePrimaryKey(pickedColumns[key] ?? [], table);
       if (fieldsPicked.length === 0) continue;
       endpoints.push({
@@ -114,14 +115,14 @@ export default function NewApiWizardPage() {
         path: defaultPath(name, prefix),
         table: table.name,
         schema: table.schema,
-        methods: allowWrites ? ["GET", ...WRITE_METHODS] : ["GET"],
+        methods,
         primary_key: pk,
         fields: fieldsPicked,
         writable_fields: fieldsPicked.filter((f) => f !== pk),
         filters: fieldsPicked.filter((f) => f !== pk).slice(0, 3),
         filter_operators: [...ALL_FILTER_OPS],
         sortable: [pk],
-        pagination: { enabled: true, mode: "cursor", default_limit: 20, max_limit: 100 },
+        pagination: { enabled: true, mode, default_limit: 20, max_limit: 100 },
         csv_export: true,
         ndjson_export: true,
         parquet_export: false,
@@ -380,10 +381,17 @@ export default function NewApiWizardPage() {
           prefix={apiPrefix}
           setPrefix={setApiPrefix}
           auth={auth}
-          setAuth={setAuth}
+          setAuth={(next) => {
+            setAuth(next);
+            if (next === "none") setAllowWrites(false); // a public API can only read
+          }}
           allowWrites={allowWrites}
           setAllowWrites={setAllowWrites}
           apiName={slug}
+          noUniqueId={pickedKeys
+            .map((k) => tables.find((t) => tableKey(t) === k))
+            .filter((t): t is TableInfo => !!t && t.primary_keys.length !== 1)
+            .map((t) => t.name)}
           nameTaken={nameTaken}
           pending={pending}
           onBack={() => setStep(1)}

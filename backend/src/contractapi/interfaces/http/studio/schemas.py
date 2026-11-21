@@ -96,3 +96,14 @@ class ProblemDetails(BaseModel):
     status: int
     detail: str | None = None
     instance: str | None = None
+
+
+class SpecDiffResponse(BaseModel):
+    """Changes a draft makes for callers of the saved API."""
+
+    breaking: bool
+    summary: dict[str, int]
+    changes: list[dict[str, Any]] = Field(default_factory=list)
+    added: list[dict[str, Any]] = Field(default_factory=list)
+    removed: list[dict[str, Any]] = Field(default_factory=list)
+    updated: list[dict[str, Any]] = Field(default_factory=list)

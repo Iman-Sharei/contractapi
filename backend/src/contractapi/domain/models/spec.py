@@ -209,6 +209,13 @@ class ApiSpec(BaseModel):
                 raise ValueError(
                     f"Endpoint '{ep.name}' declares write methods but app.read_only=true"
                 )
+            if self.app.auth == AuthMode.NONE and ep.allows_writes:
+                # Public = anyone who can reach the server; it may only read (fail closed).
+                raise ValueError(
+                    f"Endpoint '{ep.name}' allows changes, but the API is public (no key). A "
+                    "public API can only read data: choose 'API key' or 'Login tokens', or "
+                    "turn off create/update/delete for this endpoint."
+                )
         for role in self.app.rbac:
             for ep_name, fields in role.endpoints.items():
                 if ep_name not in names:

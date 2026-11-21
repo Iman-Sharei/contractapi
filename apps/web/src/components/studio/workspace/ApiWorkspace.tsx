@@ -6,7 +6,8 @@ import { useEffect, useState, useTransition } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { useConfirm, useToast } from "@/components/ui/feedback";
 import { Badge, Banner, Button, ButtonLink, EmptyState, PageHeader, Tabs } from "@/components/ui/primitives";
-import { loadSpec } from "@/lib/api";
+import { compareDraft, loadSpec } from "@/lib/api";
+import { breakingLines } from "@/lib/diffSummary";
 import { useEditorState } from "../editor/useEditorState";
 import styles from "../pages.module.css";
 import { EndpointsTab } from "./EndpointsTab";
@@ -80,6 +81,38 @@ export function ApiWorkspace({ name }: { name: string }) {
   }
 
   const onMakeLive = () => run(live.makeLive, "Your API is live.");
+
+  /** Callers of the live version must not break by surprise: list what breaks, then ask. */
+  async function onSaveAndMakeLive() {
+    if (live.isLive) {
+      let lines: string[] = [];
+      try {
+        lines = breakingLines(await compareDraft(name, s.draftSpec));
+      } catch {
+        lines = []; // cannot compare (e.g. database down): making it live reports the problem
+      }
+      if (lines.length) {
+        const ok = await confirm({
+          title: "This change breaks apps that use the live API",
+          body: (
+            <>
+              {lines.map((l) => (
+                <span key={l} className={styles.breakLine}>
+                  • {l}
+                </span>
+              ))}
+              <span className={styles.breakLine}>
+                Callers using these get errors. Consider a new version (e.g. /v2) instead.
+              </span>
+            </>
+          ),
+          confirmLabel: "Make it live anyway",
+        });
+        if (!ok) return;
+      }
+    }
+    s.onActivate();
+  }
 
   async function onStop() {
     const ok = await confirm({
@@ -163,7 +196,7 @@ export function ApiWorkspace({ name }: { name: string }) {
                 <Button variant="secondary" onClick={s.onSave} disabled={pending}>
                   Save draft
                 </Button>
-                <Button variant="primary" icon="zap" onClick={s.onActivate} disabled={pending} busy={pending}>
+                <Button variant="primary" icon="zap" onClick={onSaveAndMakeLive} disabled={pending} busy={pending}>
                   Save &amp; make live
                 </Button>
               </>

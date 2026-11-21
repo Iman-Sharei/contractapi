@@ -130,13 +130,9 @@ def read_snapshot(name: str, snapshot_id: str) -> ApiSpec:
     return load_spec(path)
 
 
-def promote_spec(name: str, *, environment: str) -> ApiSpec:
-    """Copy spec and stamp app.environment (dev→staging→production workflow)."""
-    spec = read_spec(name)
-    data = spec.model_dump(by_alias=True, mode="json")
-    data.setdefault("app", {})["environment"] = environment
-    promoted_name = f"{name}_{environment}" if not name.endswith(f"_{environment}") else name
-    return save_spec(promoted_name, data)
+def spec_exists(name: str) -> bool:
+    name = _safe_name(name)
+    return (specs_dir() / f"{name}.yaml").exists() or (specs_dir() / f"{name}.yml").exists()
 
 
 def read_spec(name: str) -> ApiSpec:
@@ -171,15 +167,8 @@ def delete_spec(name: str) -> None:
     target.unlink()
 
 
-def export_openapi_dict(spec: ApiSpec) -> dict:
-    from fastapi.openapi.utils import get_openapi
+def export_openapi_dict(spec: ApiSpec, name: str | None = None) -> dict:
+    """Complete OpenAPI of a spec (kept for the CLI and older imports)."""
+    from contractapi.application.client_exports import export_openapi
 
-    from contractapi.application.data_api_builder import create_data_app
-
-    app = create_data_app(spec)
-    return get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
-    )
+    return export_openapi(spec, name)

@@ -24,6 +24,8 @@ type Props = {
   allowWrites: boolean;
   setAllowWrites: (v: boolean) => void;
   apiName: string;
+  /** Picked tables/views without a single-column unique id. */
+  noUniqueId: string[];
   nameTaken: boolean;
   pending: boolean;
   onBack: () => void;
@@ -88,12 +90,17 @@ export function PublishStep(p: Props) {
 
           <Switch
             label="Also allow adding, changing and deleting rows"
-            description="Off = read-only (safest). You can fine-tune which fields may change later."
-            checked={p.allowWrites}
+            description={
+              p.auth === "none"
+                ? "Not possible for a public API: anyone could change your data. Choose an API key or login tokens first."
+                : "Off = read-only (safest). You can fine-tune which fields may change later."
+            }
+            checked={p.allowWrites && p.auth !== "none"}
+            disabled={p.auth === "none"}
             onChange={(e) => p.setAllowWrites(e.target.checked)}
             data-testid="wizard-allow-writes"
           />
-          {p.allowWrites && (
+          {p.allowWrites && p.auth !== "none" && (
             <Banner tone="warning" role="note">
               Callers will be able to change data in your database. Keep a key on it, and consider
               limiting which fields can be changed in the editor afterwards.
@@ -125,6 +132,13 @@ export function PublishStep(p: Props) {
               ))}
             </ul>
           </div>
+          {p.noUniqueId.length > 0 && (
+            <Banner tone="neutral" role="note" data-testid="wizard-no-unique-id">
+              {p.noUniqueId.join(", ")} {p.noUniqueId.length === 1 ? "has" : "have"} no unique id
+              column, so pages use page numbers
+              {p.allowWrites ? " and rows can only be added, not changed or deleted one by one" : ""}.
+            </Banner>
+          )}
           <SafetyChecklist spec={p.draft} />
           {p.nameTaken && (
             <Banner tone="warning" role="alert">

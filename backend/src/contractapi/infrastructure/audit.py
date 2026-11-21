@@ -22,11 +22,13 @@ def audit_event(
     principal: dict[str, Any] | None = None,
     status: int | None = None,
     meta: dict[str, Any] | None = None,
+    api: str | None = None,
 ) -> None:
     settings = get_settings()
     event = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "action": action,
+        "api": api,
         "endpoint": endpoint,
         "resource_id": resource_id,
         "sub": (principal or {}).get("sub"),
@@ -45,5 +47,31 @@ def audit_event(
 
 
 def recent_events(limit: int = 100) -> list[dict[str, Any]]:
+    """Newest events last. Read from the log file, so history survives restarts and is the
+    same for every server process; the in-memory list is only a fallback."""
+    path = Path(get_settings().audit_log_path)
     with _lock:
-        return list(_memory[-limit:])
+        if not path.exists():
+            return list(_memory[-limit:])
+        lines = _tail_lines(path, limit + 1)  # +1: the last line may still be being written
+    events = []
+    for line in lines:
+        try:
+            events.append(json.loads(line))
+        except ValueError:
+            continue  # a half-written last line while another process appends
+    return events[-limit:]
+
+
+def _tail_lines(path: Path, limit: int, block: int = 65_536) -> list[str]:
+    """Last `limit` lines without reading the whole (append-only, ever-growing) file."""
+    with path.open("rb") as fh:
+        fh.seek(0, 2)
+        end = fh.tell()
+        data = b""
+        while end > 0 and data.count(b"\n") <= limit:
+            start = max(0, end - block)
+            fh.seek(start)
+            data = fh.read(end - start) + data
+            end = start
+    return [ln for ln in data.decode("utf-8", "replace").splitlines() if ln.strip()][-limit:]
