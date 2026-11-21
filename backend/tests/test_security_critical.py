@@ -73,6 +73,7 @@ def test_production_refuses_dev_secrets():
         environment="production",
         studio_api_key="s" * 24,
         jwt_secret="j" * 40,
+        data_api_keys="",  # not from the environment: CI sets a short demo key there
     ).assert_production_safe()
 
 
