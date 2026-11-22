@@ -66,7 +66,9 @@ export function UseYourApi({ name, refreshKey = 0 }: { name: string; refreshKey?
   function onCreateKey() {
     startTransition(async () => {
       try {
-        const created = await createApiKey(`${name}-key`);
+        // Only this API; read & change when the API allows changes, else read only.
+        const writes = !spec?.app.read_only && (spec?.endpoints ?? []).some((e) => e.methods.some((m) => m !== "GET"));
+        const created = await createApiKey(`${name}-key`, { apis: [name], access: writes ? "write" : "read" });
         setApiKey(created.key);
         setError(null);
       } catch (e) {

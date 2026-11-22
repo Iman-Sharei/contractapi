@@ -40,6 +40,26 @@ those addresses, so clients cannot spoof their IP past `ip_allowlist`.
 - Without Redis, cache / rate limits / idempotency / jobs are per process: run one API worker,
   or set `REDIS_URL` before scaling out.
 
+## Company login for data APIs (OIDC)
+
+For APIs whose callers sign in with the company identity provider, set "Who can use it?" to
+login tokens and choose **Your company login** (or `jwt.provider: oidc` in YAML):
+
+- **Issuer**: exactly the `iss` of the tokens (Keycloak `https://host/realms/<realm>`, Azure AD
+  `https://login.microsoftonline.com/<tenant>/v2.0`, Okta `https://<org>.okta.com/oauth2/default`).
+  The API reads `<issuer>/.well-known/openid-configuration` and the signing keys it points to,
+  so the API server must reach the login server (https; http only for local test servers).
+- **Audience**: the client ID / API identifier your login server puts in `aud`.
+- **Roles**: where the roles are (`realm_access.roles`, `roles`, `groups`); endpoint roles and
+  field rules use them. Use **Test connection** in Studio before making the API live.
+- Needs `pip install 'contractapi[oidc]'` (the Docker image includes it).
+
+## API keys
+
+Create one key per app or person in Studio → Keys & settings, for only the APIs it needs, read
+only unless it must change data, with an expiry. `DATA_API_KEYS` are server-wide operator keys
+(every API, read and write): keep them out of apps.
+
 ## Pip-only (API without Studio UI)
 
 ```bash

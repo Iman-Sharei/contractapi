@@ -66,7 +66,7 @@ def test_studio_changes_are_audited_with_who_and_without_secrets(studio):
     from contractapi.infrastructure.audit import recent_events
 
     assert studio.post("/studio/specs", json={"name": "shop", "spec": _spec()}).status_code == 200
-    key = studio.post("/studio/keys", json={"name": "reporting-app"}).json()
+    key = studio.post("/studio/keys", json={"name": "reporting-app", "apis": ["shop"], "access": "read"}).json()
     assert studio.delete(f"/studio/keys/{key['id']}").status_code == 200
     assert studio.post("/studio/specs/shop/promote", json={"environment": "staging"}).status_code == 200
     assert studio.delete("/studio/specs/shop").status_code == 200

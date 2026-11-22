@@ -86,11 +86,16 @@ export type WebhookDraft = {
 };
 
 export type JwtConfigDraft = {
+  /** "contractapi": this server signs tokens (testing, your own backend); "oidc": your company login. */
+  provider?: "contractapi" | "oidc";
   issuer: string;
   audience: string;
   algorithm: string;
   access_ttl_minutes: number;
   refresh_ttl_days: number;
+  jwks_url?: string | null;
+  /** Where roles are in the token: "roles", "groups", "realm_access.roles"… */
+  roles_claim?: string;
 };
 
 export type RbacRoleDraft = {
@@ -306,3 +311,19 @@ export type EndpointDatabaseChange = {
 };
 
 export type DatabaseChanges = { ok: boolean; endpoints: EndpointDatabaseChange[] };
+
+export type ApiKeyInfo = {
+  id: string;
+  name: string;
+  prefix: string;
+  /** Saved API names, or ["*"] = every API. */
+  apis: string[];
+  access: "read" | "write";
+  created_at: number;
+  expires_at: number | null;
+  last_used_at: number | null;
+  revoked: boolean;
+  expired: boolean;
+};
+
+export type LoginServerInfo = { issuer: string; jwks_uri: string; signing_keys: number; algorithms: string[] };

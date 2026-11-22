@@ -32,6 +32,7 @@ def audit_event(
         "endpoint": endpoint,
         "resource_id": resource_id,
         "sub": (principal or {}).get("sub"),
+        "key": (principal or {}).get("key_name"),  # which named API key, when one was used
         "roles": (principal or {}).get("roles"),
         "status": status,
         "meta": meta or {},

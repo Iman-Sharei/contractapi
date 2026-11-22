@@ -71,25 +71,65 @@ def require_studio_api_key(
     )
 
 
-def enforce_data_api_key(request: Request, required_keys: set[str]) -> None:
-    provided = request.headers.get("X-API-Key")
-    if not provided:
-        raise AppError(
-            type_="https://contractapi.dev/problems/unauthorized",
-            title="Unauthorized",
-            status=401,
-            detail="Valid X-API-Key required.",
-        )
-    from contractapi.infrastructure.api_keys import key_is_valid
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
-    if any(_constant_time_equals(provided, k) for k in required_keys) or key_is_valid(provided):
-        return
-    raise AppError(
-        type_="https://contractapi.dev/problems/unauthorized",
-        title="Unauthorized",
-        status=401,
-        detail="Valid X-API-Key required.",
+
+def _unauthorized(detail: str) -> AppError:
+    return AppError(
+        type_="https://contractapi.dev/problems/unauthorized", title="Unauthorized", status=401, detail=detail
     )
+
+
+def api_key_principal(request: Request, server_keys: set[str]) -> dict[str, Any]:
+    """Check X-API-Key for this API: unknown → 401, expired → 401, other API → 403.
+
+    DATA_API_KEYS are server-wide operator keys (every API, read and write); keys created in
+    Studio open only the APIs and access they were created for."""
+    import time
+
+    from contractapi.infrastructure.api_keys import find_key, touch
+
+    provided = request.headers.get("X-API-Key") or ""
+    if not provided:
+        raise _unauthorized("Send your API key in the X-API-Key header.")
+    sub = "key:" + hashlib.sha256(provided.encode()).hexdigest()[:12]  # never the secret itself
+    if any(_constant_time_equals(provided, k) for k in server_keys):
+        return {"sub": sub, "roles": ["api_client"], "auth_mode": "api_key", "access": "write"}
+    rec = find_key(provided)
+    if rec is None:
+        raise _unauthorized("Valid X-API-Key required.")
+    if rec.expired():
+        when = time.strftime("%Y-%m-%d", time.gmtime(rec.expires_at or 0))
+        raise AppError(
+            type_="https://contractapi.dev/problems/key-expired",
+            title="API key expired",
+            status=401,
+            detail=f"This API key expired on {when}. Ask for a new key (Studio → Keys & settings).",
+        )
+    api = getattr(request.app.state, "api_name", None)
+    if not rec.allows(api):
+        raise AppError(
+            type_="https://contractapi.dev/problems/forbidden",
+            title="Forbidden",
+            status=403,
+            detail=f"This API key is not allowed on the API '{api or 'data'}'. Ask for a key for this API.",
+        )
+    touch(rec)
+    return {"sub": sub, "roles": ["api_client"], "auth_mode": "api_key", "access": rec.access,
+            "key_name": rec.name}
+
+
+def enforce_read_only_key(request: Request, principal: dict[str, Any]) -> None:
+    """A read-only key may read, never change (GraphQL mutations are checked where they run)."""
+    if principal.get("access") != "read" or request.method.upper() in SAFE_METHODS:
+        return
+    if not request.url.path.rstrip("/").endswith("/graphql"):
+        raise AppError(
+            type_="https://contractapi.dev/problems/forbidden",
+            title="Forbidden",
+            status=403,
+            detail="This API key can only read data. Use a key with read and write access to make changes.",
+        )
 
 
 def _parse_networks(entries: list[str]) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
@@ -152,9 +192,9 @@ def authenticate_request(request: Request, spec: ApiSpec) -> dict[str, Any]:
 
     if spec.app.auth == AuthMode.API_KEY:
         keys = settings.data_api_key_set
-        from contractapi.infrastructure.api_keys import list_keys
+        from contractapi.infrastructure.api_keys import has_active_keys
 
-        if not keys and not any(not k["revoked"] for k in list_keys()):
+        if not keys and not has_active_keys():
             # Fail closed: api_key mode with zero keys must not mean "open".
             raise AppError(
                 type_="https://contractapi.dev/problems/unauthorized",
@@ -162,18 +202,13 @@ def authenticate_request(request: Request, spec: ApiSpec) -> dict[str, Any]:
                 status=401,
                 detail=(
                     "This API requires an API key, but none is configured. "
-                    "Create one in Studio → Ops → API keys (or set DATA_API_KEYS), "
+                    "Create one in Studio → Keys & settings (or set DATA_API_KEYS), "
                     "or set auth: none for a public read-only API."
                 ),
             )
-        enforce_data_api_key(request, keys)
-        provided = request.headers.get("X-API-Key") or ""
-        return {
-            # Never use (part of) the secret as identity: it ends up in audit/logs.
-            "sub": "key:" + hashlib.sha256(provided.encode()).hexdigest()[:12],
-            "roles": ["api_client"],
-            "auth_mode": "api_key",
-        }
+        principal = api_key_principal(request, keys)
+        enforce_read_only_key(request, principal)
+        return principal
 
     # JWT
     token = extract_bearer(request.headers.get("Authorization"))
@@ -184,15 +219,16 @@ def authenticate_request(request: Request, spec: ApiSpec) -> dict[str, Any]:
             status=401,
             detail="Bearer JWT required.",
         )
-    claims = verify_token(token, spec.app.jwt)
-    roles = claims.get("roles") or []
-    if isinstance(roles, str):
-        roles = [roles]
-    if not isinstance(roles, list):
-        roles = []
+    from contractapi.infrastructure.security.idp import claim_values, verify_login_token
+
+    cfg = spec.app.jwt
+    if cfg.provider == "oidc":  # issued by the company login server, checked with its public keys
+        claims = verify_login_token(token, issuer=cfg.issuer, audience=cfg.audience, jwks_url=cfg.jwks_url)
+    else:
+        claims = verify_token(token, cfg)
     return {
         "sub": str(claims.get("sub", "")),
-        "roles": [str(r) for r in roles],
+        "roles": claim_values(claims, cfg.roles_claim),
         "auth_mode": "jwt",
         "claims": claims,
     }

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -107,3 +107,48 @@ class SpecDiffResponse(BaseModel):
     added: list[dict[str, Any]] = Field(default_factory=list)
     removed: list[dict[str, Any]] = Field(default_factory=list)
     updated: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CreateKeyRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=64, description="Who the key is for, e.g. sales-dashboard")
+    apis: list[str] | None = Field(
+        default=None, description='Saved API names this key opens, or ["*"] for every API'
+    )
+    access: Literal["read", "write"] | None = Field(
+        default=None, description='"read" = only GET; "write" = may also create, change, delete'
+    )
+    expires_in_days: int | None = Field(default=None, ge=1, le=3650, description="Empty = never expires")
+    scopes: list[str] | None = Field(default=None, description="Older clients: ['*'] or ['read']")
+
+
+class ApiKeyInfo(BaseModel):
+    id: str
+    name: str
+    prefix: str
+    apis: list[str]
+    access: str
+    created_at: float
+    expires_at: float | None = None
+    last_used_at: float | None = None
+    revoked: bool
+    expired: bool
+
+
+class ApiKeyCreated(ApiKeyInfo):
+    key: str = Field(description="The key itself: shown once, store it now")
+
+
+class ApiKeyList(BaseModel):
+    keys: list[ApiKeyInfo]
+
+
+class LoginServerTestRequest(BaseModel):
+    issuer: str = Field(min_length=1, description="Login server address, e.g. https://login.example.com/realms/main")
+    jwks_url: str | None = None
+
+
+class LoginServerTestResponse(BaseModel):
+    issuer: str
+    jwks_uri: str
+    signing_keys: int
+    algorithms: list[str]

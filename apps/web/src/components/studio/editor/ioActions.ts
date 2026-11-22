@@ -127,6 +127,11 @@ export function ioActions(c: EditorCore) {
             return;
           }
         }
+        if (spec.app.auth === "jwt" && !bearer && spec.app.jwt?.provider === "oidc") {
+          // Studio cannot sign tokens for the company login: the user pastes one.
+          setPlayResult("This API trusts your company login. Paste an access token from it into the token field, then send again.");
+          return;
+        }
         if (spec.app.auth === "jwt" && !bearer) {
           const roles = playRoles
             .split(",")

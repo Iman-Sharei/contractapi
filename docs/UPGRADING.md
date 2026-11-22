@@ -20,6 +20,13 @@ No YAML changes are required: every new option is off by default. Behaviour chan
 7. **`ENVIRONMENT=production`** refuses `DATA_API_KEYS` with `dev-data-key` or keys under 16 chars.
 8. Set **`PUBLIC_API_BASE`** on the API (same value as the web's `NEXT_PUBLIC_API_BASE`) so the
    exported OpenAPI / Postman / Python client point at the right address.
+9. **API keys:** existing keys keep working on every API (shown as "All APIs" in Studio, with a
+   hint to replace them). A key created with only the `read` scope is now read-only. New keys:
+   `POST /studio/keys` needs `apis` (saved API names or `["*"]`); `access` defaults to `read`.
+   Older scripts that send `scopes` still work.
+10. **Login tokens:** `jwt.algorithm` other than HS256/384/512 now requires `jwt.provider: oidc`
+   (tokens from a login server; it never worked with this server's secret). With `oidc`,
+   `/auth/refresh` and `/auth/revoke` are not offered: the login server handles those.
 
 ## 0.6.0 → 0.6.1
 

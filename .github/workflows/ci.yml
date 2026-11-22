@@ -132,7 +132,8 @@ jobs:
       - name: Same tests on every database
         env:
           MDB_REQUIRE_ALL: "1"
-        run: pytest -q --tb=short tests/test_multi_database.py
+        # Every test that uses the shared `db` fixture (Postgres, MySQL, SQL Server).
+        run: pytest -q --tb=short tests/test_multi_database.py tests/*_multi_db.py
 
   web:
     runs-on: ubuntu-latest

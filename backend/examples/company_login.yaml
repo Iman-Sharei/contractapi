@@ -1,0 +1,25 @@
+# A data API for apps that sign users in with the company login (Keycloak, Azure AD, Okta…).
+# Callers send the login server's access token: Authorization: Bearer <token>.
+# Studio: Settings → Who can use it? = Login tokens; Endpoints → Access & rules → Login tokens.
+# Needs pip install 'contractapi[oidc]' (included in the Docker image).
+database:
+  url: postgresql://postgres:postgres@localhost:5433/app
+app:
+  title: Orders for signed-in staff
+  version: 1.0.0
+  read_only: true
+  auth: jwt
+  api_prefix: /v1
+  jwt:
+    provider: oidc                                    # tokens come from your company login
+    issuer: https://login.example.com/realms/main     # exactly the tokens' "iss"
+    audience: orders-api                              # client ID / API identifier in "aud"
+    roles_claim: realm_access.roles                   # Keycloak; Azure AD: roles; Okta: groups
+endpoints:
+  - name: orders
+    path: /orders
+    table: orders
+    fields: [id, customer_id, total, status, created_at]
+    filters: [status]
+    sortable: [id]
+    roles: [analyst, finance]                         # only these company roles may read

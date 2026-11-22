@@ -10,6 +10,7 @@ from contractapi.application.studio_actions import (
     create_api_key,
     record_token_issued,
     revoke_api_key,
+    test_company_login,
 )
 from contractapi.application.studio_service import (
     spec_store,
@@ -18,7 +19,13 @@ from contractapi.core.errors import AppError
 from contractapi.infrastructure.security.auth import studio_actor
 from contractapi.infrastructure.security.jwt_tokens import issue_token
 from contractapi.interfaces.http.studio.schemas import (
+    ApiKeyCreated,
+    ApiKeyList,
+    CreateKeyRequest,
     IssueTokenRequest,
+    LoginServerTestRequest,
+    LoginServerTestResponse,
+    ProblemDetails,
 )
 
 # Included by studio.router under /studio with its auth dependency.
@@ -38,6 +45,13 @@ def studio_issue_token(body: IssueTokenRequest, request: Request) -> dict[str, s
             status=404,
             detail=f"No activated API named '{body.api}'. Activate it first.",
         )
+    if target is not None and target.app.jwt.provider == "oidc":
+        raise AppError(
+            type_="https://contractapi.dev/problems/validation-error",
+            title="Validation failed",
+            status=400,
+            detail="This API trusts your company login. Sign in there to get a token, then paste it.",
+        )
     token = issue_token(
         subject=body.sub,
         roles=body.roles,
@@ -49,18 +63,38 @@ def studio_issue_token(body: IssueTokenRequest, request: Request) -> dict[str, s
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.get("/keys")
+@router.post(
+    "/company-login/test",
+    response_model=LoginServerTestResponse,
+    summary="Check that the API server can read a company login server's signing keys",
+    responses={code: {"model": ProblemDetails} for code in (400, 401, 422)},
+)
+def studio_test_company_login(body: LoginServerTestRequest) -> dict[str, Any]:
+    return test_company_login(body.issuer, body.jwks_url)
+
+
+@router.get("/keys", response_model=ApiKeyList, summary="API keys (never the keys themselves)")
 def studio_list_keys() -> dict[str, Any]:
     from contractapi.infrastructure.api_keys import list_keys
 
     return {"keys": list_keys()}
 
 
-@router.post("/keys")
-def studio_create_key(body: dict[str, Any], request: Request) -> dict[str, Any]:
-    name = str(body.get("name") or "default")
-    scopes = list(body.get("scopes") or ["*"])
-    return create_api_key(name, scopes, actor=studio_actor(request))
+@router.post(
+    "/keys",
+    response_model=ApiKeyCreated,
+    summary="Create an API key for some APIs, read or read & write; the key is shown once",
+    responses={code: {"model": ProblemDetails} for code in (401, 422)},
+)
+def studio_create_key(body: CreateKeyRequest, request: Request) -> dict[str, Any]:
+    return create_api_key(
+        body.name,
+        apis=body.apis,
+        access=body.access,
+        expires_in_days=body.expires_in_days,
+        scopes=body.scopes,
+        actor=studio_actor(request),
+    )
 
 
 @router.delete("/keys/{key_id}")

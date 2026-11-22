@@ -3,10 +3,12 @@ import { toYaml } from "./yaml";
 import type {
   ActiveApiMount,
   ActiveInfo,
+  ApiKeyInfo,
   ApiSpecDraft,
   DatabaseChanges,
   DatabaseDriver,
   EndpointDraft,
+  LoginServerInfo,
   OpenApiDiff,
   SpecListItem,
   StudioHealth,
@@ -301,15 +303,27 @@ export async function oidcMe() {
   }>;
 }
 
-export async function listApiKeys() {
-  return studioFetch<{ keys: Array<Record<string, unknown>> }>("/keys");
+export async function listApiKeys(): Promise<{ keys: ApiKeyInfo[] }> {
+  return studioFetch<{ keys: ApiKeyInfo[] }>("/keys");
 }
 
-export async function createApiKey(name: string, scopes: string[] = ["*"]) {
-  return studioFetch<{ id: string; name: string; key: string; prefix: string; scopes: string[] }>(
-    "/keys",
-    { method: "POST", body: JSON.stringify({ name, scopes }) },
-  );
+/** A key for some APIs ("*" = all), read-only or read & write, optionally expiring. Shown once. */
+export async function createApiKey(
+  name: string,
+  opts: { apis: string[]; access: "read" | "write"; expiresInDays?: number | null },
+) {
+  return studioFetch<ApiKeyInfo & { key: string }>("/keys", {
+    method: "POST",
+    body: JSON.stringify({ name, apis: opts.apis, access: opts.access, expires_in_days: opts.expiresInDays ?? null }),
+  });
+}
+
+/** Can the API server read this company login server's signing keys? */
+export async function testCompanyLogin(issuer: string, jwksUrl?: string | null) {
+  return studioFetch<LoginServerInfo>("/company-login/test", {
+    method: "POST",
+    body: JSON.stringify({ issuer, jwks_url: jwksUrl || null }),
+  });
 }
 
 export async function revokeApiKey(keyId: string) {

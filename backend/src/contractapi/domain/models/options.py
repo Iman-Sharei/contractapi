@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -101,13 +103,54 @@ class RolePermissions(BaseModel):
     )
 
 
+_LOCAL_SUFFIXES = (".localhost", ".internal", ".local", ".test")
+_CLAIM_PATH = re.compile(r"^[A-Za-z0-9_:\-]+(\.[A-Za-z0-9_:\-]+)*$")
+
+
+def _check_login_url(label: str, url: str) -> str:
+    """https, except for local/test hosts (plain http would let anyone swap the signing keys)."""
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    local = host in {"localhost", "127.0.0.1", "::1"} or "." not in host or host.endswith(_LOCAL_SUFFIXES)
+    if parsed.scheme not in ("https", "http") or not host:
+        raise ValueError(f"{label} must be a web address like https://login.example.com/realms/main")
+    if parsed.scheme == "http" and not local:
+        raise ValueError(f"{label} must use https:// (only local test servers may use http://)")
+    return url.strip()  # kept as typed: the token's "iss" must match it exactly
+
+
 class JwtConfig(BaseModel):
+    """Login tokens (JWT). provider "contractapi": signed by this server with JWT_SECRET (testing,
+    or your own backend). provider "oidc": issued by your company login (Keycloak, Azure AD,
+    Okta, Google…) and checked against its public signing keys (JWKS)."""
+
+    provider: Literal["contractapi", "oidc"] = "contractapi"
     issuer: str = "contractapi"
     audience: str = "contractapi-clients"
     algorithm: str = "HS256"
     access_ttl_minutes: int = Field(default=15, ge=1, le=1440)
     refresh_ttl_days: int = Field(default=7, ge=1, le=90)
     # Secret comes from env JWT_SECRET — never store in YAML.
+    jwks_url: str | None = Field(default=None, description="Only if the login server does not publish discovery")
+    roles_claim: str = Field(default="roles", description="Where roles are in the token, e.g. realm_access.roles")
+
+    @model_validator(mode="after")
+    def check_provider(self) -> JwtConfig:
+        if not _CLAIM_PATH.match(self.roles_claim):
+            raise ValueError(f"roles_claim '{self.roles_claim}' must be a claim name or path like realm_access.roles")
+        if self.provider == "contractapi":
+            if self.algorithm not in {"HS256", "HS384", "HS512"}:
+                raise ValueError(
+                    f"algorithm '{self.algorithm}' needs keys from a login server: set provider: oidc "
+                    "and its issuer address (this server signs with HS256/HS384/HS512 only)"
+                )
+            return self
+        self.issuer = _check_login_url("The login server address (issuer)", self.issuer)
+        if self.jwks_url:
+            self.jwks_url = _check_login_url("jwks_url", self.jwks_url)
+        if not self.audience.strip():
+            raise ValueError("Set the audience your login server puts in tokens (client ID or API identifier)")
+        return self
 
 
 class RowLevelConfig(BaseModel):

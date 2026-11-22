@@ -57,6 +57,8 @@ def _write_target(
     if ep.is_sql:
         raise ValueError("SQL endpoints are read-only over GraphQL.")
     principal: dict[str, Any] = info.context["principal"]
+    if principal.get("access") == "read":  # same rule as REST: a read-only key never writes
+        raise ValueError("This API key can only read data. Use a key with read and write access.")
     enforce_endpoint_roles(principal, ep.roles)
     return ep, info.context["engine"], info.context["spec"], principal
 

@@ -69,9 +69,42 @@ def promote_api(name: str, environment: str, *, actor: dict[str, Any] | None) ->
     return {"name": target, "spec": spec, "database_kept": existing is not None}
 
 
-def create_api_key(name: str, scopes: list[str], *, actor: dict[str, Any] | None) -> dict[str, Any]:
-    created = api_keys.create_key(name=name, scopes=scopes)
-    _log("studio.key.create", actor, id=created["id"], name=name, prefix=created["prefix"])
+def create_api_key(
+    name: str,
+    *,
+    apis: list[str] | None,
+    access: str | None,
+    expires_in_days: int | None = None,
+    scopes: list[str] | None = None,
+    actor: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """A key for the named saved APIs ("*" = every API), read or read & write, optionally expiring."""
+    import time
+
+    from contractapi.core.errors import AppError
+
+    if apis is None and scopes is None:
+        apis = []  # new callers must say which APIs (least privilege); see below
+    chosen = sorted(set(apis if apis is not None else [api_keys.ALL_APIS]))
+    if not chosen:
+        raise AppError(
+            type_="https://contractapi.dev/problems/validation-error",
+            title="Validation failed",
+            status=422,
+            detail="Choose at least one API this key may call (or all APIs).",
+        )
+    unknown = [a for a in chosen if a != api_keys.ALL_APIS and not spec_repo.spec_exists(a)]
+    if unknown:
+        raise AppError(
+            type_="https://contractapi.dev/problems/validation-error",
+            title="Validation failed",
+            status=422,
+            detail=f"No saved API named {', '.join(repr(u) for u in unknown)}. Check the name in My APIs.",
+        )
+    expires_at = time.time() + expires_in_days * 86_400 if expires_in_days else None
+    created = api_keys.create_key(name=name, apis=chosen, access=access, expires_at=expires_at, scopes=scopes)
+    _log("studio.key.create", actor, id=created["id"], name=name, prefix=created["prefix"],
+         apis=created["apis"], access=created["access"], expires_at=expires_at)
     return created
 
 
@@ -84,3 +117,35 @@ def revoke_api_key(key_id: str, *, actor: dict[str, Any] | None) -> bool:
 
 def record_token_issued(api: str | None, subject: str, *, actor: dict[str, Any] | None) -> None:
     _log("studio.token.issue", actor, api=api, subject=subject)
+
+
+def test_company_login(issuer: str, jwks_url: str | None) -> dict[str, Any]:
+    """Studio's "Test connection": can this server read the login server's signing keys?"""
+    from pydantic import ValidationError
+
+    from contractapi.core.errors import AppError
+    from contractapi.domain.models.options import JwtConfig
+    from contractapi.infrastructure.security.idp import (
+        LoginServerUnreachable,
+        describe_login_server,
+    )
+
+    try:
+        cfg = JwtConfig(provider="oidc", issuer=issuer, audience="check", jwks_url=jwks_url or None)
+    except ValidationError as exc:
+        raise AppError(
+            type_="https://contractapi.dev/problems/validation-error",
+            title="Validation failed",
+            status=422,
+            detail=str(exc.errors()[0].get("msg", "")).removeprefix("Value error, "),
+        ) from exc
+    try:
+        return describe_login_server(cfg.issuer, cfg.jwks_url)
+    except LoginServerUnreachable as exc:
+        raise AppError(
+            type_="https://contractapi.dev/problems/auth-unavailable",
+            title="Login server unreachable",
+            status=400,
+            detail=f"Could not read the login server's signing keys ({exc}). Check the address, and "
+            "that this server can reach it.",
+        ) from exc

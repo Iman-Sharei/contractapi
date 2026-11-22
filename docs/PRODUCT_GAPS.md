@@ -42,6 +42,8 @@ Each rule is a spec option and a Studio control; defaults keep the simple behavi
 | Exact money values | `app.decimals: string` | Applies to the whole API, not per field |
 | Date-times with a zone | `database.timezone` | One zone per database; async-job results use the stored value as is |
 | Notice renamed/dropped columns | 409 `schema-changed` + Studio **Check database changes** | Checked on request or on demand, not pushed to you |
+| Keys for one API / read only | Studio → Keys & settings (`apis`, `access`, expiry) | No per-key rate limits or IP lists yet; keys live in one JSON file (hashes only) |
+| Company login (OIDC) for data APIs | `jwt.provider: oidc`, `issuer`, `audience`, `roles_claim` | One login server per API; no token introspection for opaque (non-JWT) tokens |
 | Snowflake/BigQuery nested data | automatic | Returned as JSON only: no filter, sort or write on those columns; GraphQL returns VARIANT as text |
 
 Not offered on purpose: **custom code hooks** (running user Python on the server). Rules that need

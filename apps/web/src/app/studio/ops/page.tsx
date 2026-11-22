@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { ActivityCard } from "@/components/studio/ops/ActivityCard";
 import { DownloadsCard } from "@/components/studio/ops/DownloadsCard";
-import { KeysCard, type KeyRow } from "@/components/studio/ops/KeysCard";
+import { KeysCard } from "@/components/studio/ops/KeysCard";
 import type { RunAction } from "@/components/studio/ops/shared";
 import { VersionsCard } from "@/components/studio/ops/VersionsCard";
 import { useToast } from "@/components/ui/feedback";
 import { Banner, Button, PageHeader, Tabs } from "@/components/ui/primitives";
 import { getAudit, listApiKeys, listSpecs } from "@/lib/api";
+import type { ApiKeyInfo } from "@/lib/types";
 import type { SpecListItem } from "@/lib/types";
 import styles from "@/components/studio/pages.module.css";
 
@@ -16,7 +17,7 @@ type Section = "keys" | "versions" | "downloads" | "activity";
 
 export default function OpsPage() {
   const [section, setSection] = useState<Section>("keys");
-  const [keys, setKeys] = useState<KeyRow[]>([]);
+  const [keys, setKeys] = useState<ApiKeyInfo[]>([]);
   const [events, setEvents] = useState<Record<string, unknown>[]>([]);
   const [specs, setSpecs] = useState<SpecListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,7 @@ export default function OpsPage() {
     startTransition(async () => {
       try {
         const [k, a, s] = await Promise.all([listApiKeys(), getAudit(80), listSpecs()]);
-        setKeys(k.keys as KeyRow[]);
+        setKeys(k.keys);
         setEvents(a.events);
         setSpecs(s.specs);
         setError(null);
@@ -82,7 +83,9 @@ export default function OpsPage() {
         ]}
       />
 
-      {section === "keys" && <KeysCard keys={keys} pending={pending} run={run} />}
+      {section === "keys" && (
+        <KeysCard keys={keys} apiNames={specs.map((x) => x.name)} pending={pending} run={run} />
+      )}
       {section === "versions" && <VersionsCard specs={specs} pending={pending} run={run} onError={setError} />}
       {section === "downloads" && <DownloadsCard specs={specs} pending={pending} run={run} />}
       {section === "activity" && <ActivityCard events={events} />}

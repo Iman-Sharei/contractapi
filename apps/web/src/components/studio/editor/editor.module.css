@@ -269,3 +269,8 @@
 .hintError {
   color: var(--danger-text);
 }
+
+.legend {
+  font-weight: 550;
+  margin-bottom: 4px;
+}

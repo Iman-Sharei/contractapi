@@ -49,6 +49,7 @@ from contractapi.infrastructure.security.auth import (
     authenticate_request,
     client_ip,
 )
+from contractapi.infrastructure.security.idp import require_login_crypto
 from contractapi.infrastructure.security.jwt_tokens import (
     extract_bearer,
     refresh_tokens,
@@ -209,7 +210,11 @@ def create_data_app(spec: ApiSpec, *, engine: Engine | None = None, name: str | 
     def prometheus_metrics() -> PlainTextResponse:
         return PlainTextResponse(metrics.render_prometheus(), media_type="text/plain; version=0.0.4")
 
-    if spec.app.auth == AuthMode.JWT:
+    if spec.app.auth == AuthMode.JWT and spec.app.jwt.provider == "oidc":
+        require_login_crypto()
+    if spec.app.auth == AuthMode.JWT and spec.app.jwt.provider == "contractapi":
+        # Refresh / revoke exist only for tokens this server signs; a company login server
+        # refreshes and revokes its own tokens.
         # No public token minting here: tokens come from your IdP, or from the
         # admin-only Studio endpoint POST /studio/token for testing.
 

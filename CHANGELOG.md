@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### API keys for one API, read-only, expiring
+- A key now opens only the APIs it was created for (or every API, chosen explicitly, with a
+  warning in Studio): another API answers 403. Before, any key opened every API on the server
+- A key is "read" (GET only, also over GraphQL) or "read and change"; a read-only key that tries
+  to change data gets 403. The old "Permissions" field was stored but never checked
+- Keys can expire (401 `key-expired` with the date) and show when they were last used
+- Keys & settings asks who the key is for, which APIs, what it may do and when it stops working;
+  "Use your API" creates a key for that API only. Key creation is audited with its APIs and access
+- Keys made before this change keep working on every API, marked "All APIs" with a hint to
+  replace them; a key whose only scope was "read" is now read-only, as its creator asked
+
+### Company login for data APIs
+- `jwt.provider: oidc` accepts access tokens from your company login (Keycloak, Azure AD, Okta,
+  Google, Auth0…): checked against its public signing keys (JWKS, found from the issuer),
+  asymmetric algorithms only, issuer and audience required, keys cached and refreshed on rotation
+  (at most one extra fetch per 30 s). `jwt.roles_claim` says where roles are
+  (`realm_access.roles`, `groups`, …); they drive endpoint roles and field rules
+- Errors say what is wrong: token for another app (audience) or login server (issuer), expired,
+  not a login token; an unreachable login server is 503 `auth-unavailable`, never a silent pass
+- Studio: "Login tokens" in plain words — this server or your company login — with a
+  **Test connection** button (`POST /studio/company-login/test`); "Try it" takes a pasted token
+- Example: `backend/examples/company_login.yaml`
+
 ### Handing an API to another team
 - Each API's OpenAPI now declares its key (API key header or Bearer token), so `/docs` has an
   **Authorize** button and generated clients send it; lists every filter (`status__in`, …),
